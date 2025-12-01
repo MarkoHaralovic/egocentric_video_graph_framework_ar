@@ -1,0 +1,13 @@
+projectaria_tools
+numpy
+opencv-python
+torch
+torchaudio
+torchvision
+matplotlib
+transformers
+tqdm
+pandas
+pillow
+flash-attn
+bitsandbytes
