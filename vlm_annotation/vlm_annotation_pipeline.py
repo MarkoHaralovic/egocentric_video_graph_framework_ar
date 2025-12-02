@@ -20,9 +20,13 @@ import torch
 from torch.multiprocessing import Process, Queue, set_start_method
 import torch.multiprocessing as mp
 
+from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor
+from transformers import BitsAndBytesConfig
+import torch
+
 # hyperparameters 
-VLM_ANNOTATOR = "/home/s3758869/models/llava-next-72b-hf" #"llava-hf/llava-next-72b-hf"
-MODEL_CACHE_DIR = "/home/s3758869/models" 
+VLM_ANNOTATOR = "/home/s3758869/models/llava-v1.6-34b-hf" # "/home/s3758869/models/llava-v1.6-mistral-7b-hf" # "/home/s3758869/models/llava-v1.6-34b-hf" #"llava-hf/llava-next-72b-hf" "/home/s3758869/models/llava-next-72b-hf" 
+MODEL_CACHE_DIR = "/home/s3758869/models"  
 NUM_GPUS = torch.cuda.device_count() 
 EACH_NTH_FRAME_SEC = 3 # select one frame in this amount of seconds
 N_FRAMES_FOR_ACTIVITY = 10 # number of consecutive action frames to be sent for activity annotation
@@ -33,12 +37,9 @@ EIGHT_BIT_QUANTIZATION = False
 
 # data location
 INPUT_DATA_FOLDER = "/deepstore/datasets/dmb/ComputerVision/information_retrieval/AriaEA"
-OUTPUT_DATA_FOLDER = f"/deepstore/datasets/dmb/ComputerVision/information_retrieval/AriaEA_vlm_ann_{EACH_NTH_FRAME_SEC}_{N_FRAMES_FOR_ACTIVITY}_{VLM_ANNOTATOR.split('/')[-1]}"
+OUTPUT_DATA_FOLDER = f"/home/s3758869/vlm_datasets/AriaEA_vlm_ann_{EACH_NTH_FRAME_SEC}_{N_FRAMES_FOR_ACTIVITY}_{VLM_ANNOTATOR.split('/')[-1]}"
+os.makedirs(OUTPUT_DATA_FOLDER, exist_ok=True)
 RGB_STREAM_ID = StreamId("214-1")
-
-from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor
-from transformers import BitsAndBytesConfig
-import torch
 
 def load_llava_model(
    model_name,
@@ -86,7 +87,17 @@ def load_llava_model(
    model.eval()
    return model, processor
 
-
+def parse_llava_output(llava_output):
+   parsed = llava_output  # Default: return as-is
+   
+   if "[/INST]" in llava_output:
+      parsed = llava_output.split("[/INST]")[-1].strip()
+   elif "ASSISTANT: " in llava_output:
+      parsed = llava_output.split("ASSISTANT: ")[-1].strip()
+   
+   return parsed
+      
+   
 def stream_rgb_vrs_recording(aea_data_provider, rgb_stream_id):
    timestamps = aea_data_provider.vrs.get_timestamps_ns(
       rgb_stream_id, TimeDomain.DEVICE_TIME
@@ -151,17 +162,16 @@ def recognize_action_single_frame(model, processor, image_np,image_size = IMAGE_
                - Use ONE clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, looking, etc.).
                - Use ONE main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
                - Context must be short and descriptive (location or surrounding objects).
+               - Optinal context can only include relevant objects and their characteristics.
                - No adjectives unless needed to identify the object.
-               - No lists, no multiple actions, no second sentence.
-               - If uncertain, choose the most likely action or output: "The camera wearer is unsure what they are doing."
                
 
                Examples you MUST imitate:
 
-                  The camera wearer is opening a door in a hallway.
+                  The camera wearer is opening a door in a long hallway full of people's portraits.
                   The camera wearer is cutting vegetables on a brown board.
                   The camera wearer is using a phone near a mirror in a bedroom.
-                  The camera wearer is taking a cup from the table with another person at the table.
+                  The camera wearer is taking a cup from the table with another person sitting at the table.
                   The camera wearer is washing hands in a sink while looking at his reflection in a mirror.
 
                Return only the sentence. Do not explain reasoning.
@@ -220,24 +230,23 @@ def recognize_action_local_window(model, processor, images_np,image_size = IMAGE
          The camera wearer is <verb-ing> <object> <optional-context>.
 
       Rules:
-      - Start with exactly: "The camera wearer is"
-      - Use ONE clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, looking, etc.).
-      - Use ONE main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
-      - Context must be short and descriptive (location or surrounding objects).
-      - No adjectives unless needed to identify the object.
-      - No lists, no multiple actions, no second sentence.
-      - If uncertain, choose the most likely action or output: "The camera wearer is unsure what they are doing."
-      
+         - Start with exactly: "The camera wearer is"
+         - Use ONE clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, looking, etc.).
+         - Use ONE main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
+         - Context must be short and descriptive (location or surrounding objects).
+         - Optinal context can only include relevant objects and their characteristics.
+         - No adjectives unless needed to identify the object.
+         
 
-      Examples you MUST imitate:
+         Examples you MUST imitate:
 
-         The camera wearer is opening a door in a hallway.
-         The camera wearer is cutting vegetables on a brown board.
-         The camera wearer is using a phone near a mirror in a bedroom.
-         The camera wearer is taking a cup from the table with another person at the table.
-         The camera wearer is washing hands in a sink while looking at his reflection in a mirror.
+            The camera wearer is opening a door in a long hallway full of people's portraits.
+            The camera wearer is cutting vegetables on a brown board.
+            The camera wearer is using a phone near a mirror in a bedroom.
+            The camera wearer is taking a cup from the table with another person sitting at the table.
+            The camera wearer is washing hands in a sink while looking at his reflection in a mirror.
 
-      Return only the sentence. Do not explain reasoning.
+         Return only the sentence. Do not explain reasoning.
       """
    })
    
@@ -266,17 +275,19 @@ def recognize_action_local_window(model, processor, images_np,image_size = IMAGE
    
    return result
 
-def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_INPUT):
+def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_INPUT, actions=None):
    """
    Takes a numpy array image (N, H, W, 3) -> N rgb images
    Returns a string with VLM-predicted activity across span of N images
    """
    torch.cuda.empty_cache()
    
+   activity_image_size = min(image_size, 168) 
+   
    images = [Image.fromarray(img_np) for img_np in images_np]
    
    for img in images:
-      img.thumbnail((image_size, image_size), Image.Resampling.LANCZOS)
+      img.thumbnail((activity_image_size, activity_image_size), Image.Resampling.LANCZOS)
    
    content = []
    for _ in images:
@@ -284,7 +295,7 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
    
    content.append({
       "type": "text",
-      "text": """
+      "text": f"""
       You are given several egocentric images that belong to one short time span. 
       They are ordered in time from earliest to latest.
 
@@ -312,6 +323,8 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
       IMPORTANT:
       - Return ONLY the activity label token (like open_door). 
       - Do NOT add explanations, sentences, or quotes.
+      
+      Previous actions based on single frame were : {actions}
       """
    })
    
@@ -326,16 +339,26 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
    
    inputs = processor(images=images, text=prompt, return_tensors="pt").to(model.device)
    
-   with torch.inference_mode(): 
-      output = model.generate(
-         **inputs,
-         max_new_tokens=20,  # Activities are short labels
-         do_sample=False
-      )
+   try:
+      with torch.inference_mode(): 
+         output = model.generate(
+            **inputs,
+            max_new_tokens=20,  
+            do_sample=False,
+            use_cache=False 
+         )
 
-      result = processor.decode(output[0], skip_special_tokens=True).strip()
+         result = processor.decode(output[0], skip_special_tokens=True).strip()
+      
+      del inputs, output
+      torch.cuda.empty_cache()
+      
+   except torch.cuda.OutOfMemoryError:
+      del inputs
+      torch.cuda.empty_cache()
+      return None
    
-   del inputs, output
+   del images, content, conversation
    torch.cuda.empty_cache()
    
    return result
@@ -350,27 +373,37 @@ def action_annotate(model, processor, images, local_window = LOCAL_WINDOW_FOR_AC
          result = recognize_action_single_frame(model, processor, images_for_act[0], image_size) 
       else:
          result = recognize_action_local_window(model, processor, images_for_act, image_size) 
-      action = result.split("ASSISTANT: ")[-1]
+      
+      action = parse_llava_output(result)
       actions.append(action)
+      
+      if (i + 1) % 10 == 0:
+         torch.cuda.empty_cache()
+   
    return actions
 
 
-def activity_annotate(model, processor, images, N_frames_for_activity,image_size=IMAGE_SIZE_VLM_INPUT):
+def activity_annotate(model, processor, images, N_frames_for_activity,image_size=IMAGE_SIZE_VLM_INPUT, actions = None):
    activities = []
    T = len(images)
 
    max_activities = T // N_frames_for_activity
 
    for i in tqdm.tqdm(range(max_activities), desc="Activity annotating clip"):
+      torch.cuda.empty_cache()
+      
       start = i * N_frames_for_activity
       end  = min(start + N_frames_for_activity, len(images)-1)
 
       images_for_act = images[start:end]
       images_for_act = [np.rot90(img, k=-1) for img in images_for_act]
 
-      result = recognize_activity(model,processor, images_for_act, image_size)
-      activity = result.split("ASSISTANT: ")[-1].strip()
+      result = recognize_activity(model,processor, images_for_act, image_size, actions=actions)
+      activity = parse_llava_output(result) if result is not None else "not_annotated"
       activities.append(activity)
+      
+      del images_for_act
+      torch.cuda.empty_cache()
 
    return activities
 
@@ -383,6 +416,7 @@ def save_images_annotations(images_np, output_path, actions, activities, N_frame
    csv_records = []
 
    for i, img in enumerate(images_np):
+      img = np.rot90(img, k=-1)
       frame_name = f"frame_{i:04d}.jpg"
       frame_path = os.path.join(img_dir, frame_name)
 
@@ -549,7 +583,7 @@ def main():
       try:
          mp.set_start_method('spawn', force=True)
       except RuntimeError:
-         pass  # Already set
+         pass 
       
       annotate_dataset_mp(
          VLM_ANNOTATOR,

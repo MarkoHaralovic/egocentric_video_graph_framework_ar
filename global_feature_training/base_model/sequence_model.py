@@ -6,21 +6,19 @@ class ImageSequenceClassificator(nn.Module):
    def __init__(
       self,
       vision_backbone,
+      text_backbone,
       n_classes,
-      feature_map_depth,
       linear_layer_input_dim,
       fc_layers_num,
       use_precomputed_features,
       transforms,
       device="cuda",
-      text_backbone=None
     ):
       super(ImageSequenceClassificator, self).__init__()
 
       self.vision_backbone = vision_backbone
       self.text_backbone = text_backbone
       self.n_classes = n_classes
-      self.feature_map_depth = feature_map_depth
       self.linear_layer_input_dim = linear_layer_input_dim 
       self.fc_layers_num = fc_layers_num
       self.device = device
