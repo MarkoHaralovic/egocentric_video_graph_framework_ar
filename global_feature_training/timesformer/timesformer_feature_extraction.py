@@ -12,7 +12,7 @@ from PIL import Image
 import torchvision.transforms as T
 import random
  
-def sample_frames_and_labels(frames, actions, num_frames):
+def sample_frames_and_labels(frames, actions, gazes, num_frames):
    total_frames = len(frames)
    
    if total_frames >= num_frames:
@@ -23,8 +23,9 @@ def sample_frames_and_labels(frames, actions, num_frames):
    
    sampled_frames = [frames[idx] for idx in sampled_indices]
    sampled_actions = [actions[idx] for idx in sampled_indices]
+   sampled_gazes = gazes[sampled_indices]
    
-   return sampled_frames, sampled_actions
+   return sampled_frames, sampled_actions, sampled_gazes
 
 def get_visual_features(model, images, resize_size=224, device="cuda"):
    to_tensor = v2.ToImage()
@@ -110,6 +111,7 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       visual_feats = []
       text_feats = []
       activity_labels = []
+      gaze_labels = []
       
       clip_output_path = os.path.join(output_path, clip)
       os.makedirs(clip_output_path, exist_ok=True)
@@ -122,8 +124,11 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
          frames = [rgb_images[idx] for idx in frame_idxs]
          actions = data_block["action"].tolist()
          activity = data_block["activity"].iloc[0]
+         gaze_x = data_block["gaze_x"].to_numpy()
+         gaze_y = data_block["gaze_y"].to_numpy()
+         gazes = np.stack([gaze_x, gaze_y], axis=1)
          
-         sampled_frames, sampled_actions = sample_frames_and_labels(frames, actions, num_frames)
+         sampled_frames, sampled_actions, sampled_gazes = sample_frames_and_labels(frames, actions, gazes, num_frames)
       
          image_features = get_visual_features(vision_backbone, sampled_frames, device=device)
          text_features = get_text_features(text_backbone, tokenizer, sampled_actions, device)
@@ -136,15 +141,18 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
          visual_feats.append(image_features)
          text_feats.append(text_features)
          activity_labels.append(activity)
+         gaze_labels.append(sampled_gazes)
             
       visual_feats = np.stack(visual_feats, axis=0)
       text_feats = np.stack(text_feats, axis=0)
       activity_labels = np.array([str(a) for a in activity_labels], dtype=h5py.string_dtype(encoding='utf-8'))
+      gaze_feats = np.stack(gaze_labels, axis=0)
 
       with h5py.File(h5_path, "w") as f:
          f.create_dataset("visual_features", data=visual_feats, dtype="float32")
          f.create_dataset("text_features", data=text_feats, dtype="float32")
          f.create_dataset("activity_labels", data=activity_labels)
+         f.create_dataset("gaze_labels", data=gaze_feats)
          
      
 MODEL_CACHE_DIR = "/home/s3758869/models"

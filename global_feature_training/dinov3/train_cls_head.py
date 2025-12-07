@@ -10,15 +10,15 @@ from ..dinov3.dinov3_feature_extraction import (
 from ..data_loading.sequence_dataset import SequenceDataset, feature_collate_fn
 
 USE_PRECOMPUTED_FEATURES = True
-INPUT_FOLDER = ""
+DINOV3_PRECOMUPTED_FEATS_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf_features_dinov3h16+_pooling_average"
 dinov3_model_name = "dinov3h16+"
-dinov3_model_path = ""
-clip_model_path = ""
-dino_cache_dir = ""
-clip_cache_dir = ""
+dinov3_model_path = "/home/s3758869/models/dinov3-vith16plus-pretrain-lvd1689m"
+clip_model_path = "/home/s3758869/models/clip-vit-base-patch32"
+dino_cache_dir = "/home/s3758869/models"
+clip_cache_dir = "/home/s3758869/models"
 
 dataset = SequenceDataset(
-    input_folder = INPUT_FOLDER,
+    input_folder = DINOV3_PRECOMUPTED_FEATS_FOLDER,
     model_name = dinov3_model_name, 
     load_viusal=True,
     load_text=False,
