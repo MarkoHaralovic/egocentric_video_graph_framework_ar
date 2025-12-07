@@ -1,4 +1,5 @@
 import os
+import random
 from projectaria_tools.projects.aea import (
     AriaEverydayActivitiesDataPathsProvider,
     AriaEverydayActivitiesDataProvider)
@@ -6,6 +7,7 @@ import numpy as np
 
 from projectaria_tools.core.sensor_data import TimeDomain
 from projectaria_tools.core.stream_id import StreamId
+from projectaria_tools.core.mps.utils import get_eyegaze_point_at_depth
 
 import cv2
 import tqdm
@@ -15,6 +17,7 @@ import pandas as pd
 # VLM part
 from transformers import LlavaNextProcessor, LlavaNextForConditionalGeneration
 from PIL import Image
+import PIL
 import torch
 
 from torch.multiprocessing import Process, Queue, set_start_method
@@ -34,6 +37,9 @@ IMAGE_SIZE_VLM_INPUT =  336 # image size for LLaVA annotation
 LOCAL_WINDOW_FOR_ACTION_SIZE = 1 # amount of images at each timestamp sent for action recogntion. If eg 3, at second N, context is frame one second befor and after
 FOUR_BIT_QUANTIZATION = True # whether to quantize LLaVA model to reduce VRAM usage
 EIGHT_BIT_QUANTIZATION = False
+
+#todo : add support for https://huggingface.co/docs/transformers/en/model_doc/video_llava
+# https://huggingface.co/docs/transformers/en/model_doc/llava_next_video
 
 # data location
 INPUT_DATA_FOLDER = "/deepstore/datasets/dmb/ComputerVision/information_retrieval/AriaEA"
@@ -82,7 +88,8 @@ def load_llava_model(
    processor = LlavaNextProcessor.from_pretrained(
       model_name,
       cache_dir=MODEL_CACHE_DIR,
-      local_files_only=True
+      local_files_only=True,
+      use_fast=True
    )
    model.eval()
    return model, processor
@@ -94,10 +101,12 @@ def parse_llava_output(llava_output):
       parsed = llava_output.split("[/INST]")[-1].strip()
    elif "ASSISTANT: " in llava_output:
       parsed = llava_output.split("ASSISTANT: ")[-1].strip()
-   
+   elif "assistant/n" in llava_output:
+      parsed = llava_output.split("assistant/n")[-1].strip()
+   elif "assistant" in llava_output:
+      parsed = llava_output.split("assistant")[-1].strip()
    return parsed
       
-   
 def stream_rgb_vrs_recording(aea_data_provider, rgb_stream_id):
    timestamps = aea_data_provider.vrs.get_timestamps_ns(
       rgb_stream_id, TimeDomain.DEVICE_TIME
@@ -157,21 +166,20 @@ def recognize_action_single_frame(model, processor, image_np,image_size = IMAGE_
 
                   The camera wearer is <verb-ing> <object> <optional-context>.
 
-               Rules:
+              Rules:
                - Start with exactly: "The camera wearer is"
-               - Use ONE clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, looking, etc.).
-               - Use ONE main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
+               - Use clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, etc.) for the action
+               - Define main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
                - Context must be short and descriptive (location or surrounding objects).
-               - Optinal context can only include relevant objects and their characteristics.
+               - Optional context can only include relevant objects and their characteristics in the frame scene
                - No adjectives unless needed to identify the object.
-               
+               - Include other people as objects as weel, direct if action done with them, indirect if it can not be concluded.
+                     
 
                Examples you MUST imitate:
-
-                  The camera wearer is opening a door in a long hallway full of people's portraits.
-                  The camera wearer is cutting vegetables on a brown board.
-                  The camera wearer is using a phone near a mirror in a bedroom.
-                  The camera wearer is taking a cup from the table with another person sitting at the table.
+                  The camera wearer is playing tennis with another person in broad daylight.
+                  The camera wearer is running with a group of people with lot of peaople at sidelines.
+                  The camera wearer is playing table tennis with a girl.
                   The camera wearer is washing hands in a sink while looking at his reflection in a mirror.
 
                Return only the sentence. Do not explain reasoning.
@@ -231,10 +239,10 @@ def recognize_action_local_window(model, processor, images_np,image_size = IMAGE
 
       Rules:
          - Start with exactly: "The camera wearer is"
-         - Use ONE clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, looking, etc.).
-         - Use ONE main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
+         - Use clear verb in -ing form (opening, closing, holding, cutting, washing, eating, pouring, using, pushing, pulling, taking, placing, walking, etc.) for the action
+         - Define main object (door, phone, cup, bowl, laptop, sink, pan, chair, book, bag, etc.).
          - Context must be short and descriptive (location or surrounding objects).
-         - Optinal context can only include relevant objects and their characteristics.
+         - Optional context can only include relevant objects and their characteristics.
          - No adjectives unless needed to identify the object.
          
 
@@ -282,7 +290,7 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
    """
    torch.cuda.empty_cache()
    
-   activity_image_size = min(image_size, 168) 
+   activity_image_size = min(IMAGE_SIZE_VLM_INPUT, image_size)
    
    images = [Image.fromarray(img_np) for img_np in images_np]
    
@@ -387,7 +395,7 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
    activities = []
    T = len(images)
 
-   max_activities = T // N_frames_for_activity
+   max_activities = (T + N_frames_for_activity - 1) // N_frames_for_activity  
 
    for i in tqdm.tqdm(range(max_activities), desc="Activity annotating clip"):
       torch.cuda.empty_cache()
@@ -398,17 +406,44 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
       images_for_act = images[start:end]
       images_for_act = [np.rot90(img, k=-1) for img in images_for_act]
 
-      result = recognize_activity(model,processor, images_for_act, image_size, actions=actions)
+      redo = True
+      act_image_size = image_size
+      act_images = images_for_act[:]
+      
+      while redo:
+         try:
+            result = recognize_activity(model, processor, act_images, act_image_size, actions=actions)
+            redo = False
+         except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if len(act_images) > 5 and act_image_size == image_size:
+               current_num = len(act_images)
+               new_num = max(5, current_num - 1)
+               act_images = random.sample(act_images, new_num)
+               print(f"OOM: Reducing image count to {new_num}")
+            elif act_image_size == 336 and len(act_images) == 5:
+               act_image_size = 118
+               print(f"OOM: Reducing image size to {act_image_size}")
+            elif len(act_images) > 2 and act_image_size == 118:
+               current_num = len(act_images)
+               new_num = max(2, current_num - 1)
+               act_images = random.sample(act_images, new_num)
+               print(f"OOM: Reducing image count to {new_num}")
+            else:
+               print("OOM: Cannot reduce further, skipping")
+               result = None
+               redo = False
+            
       activity = parse_llava_output(result) if result is not None else "not_annotated"
       activities.append(activity)
       
-      del images_for_act
+      del act_images
       torch.cuda.empty_cache()
 
    return activities
 
 
-def save_images_annotations(images_np, output_path, actions, activities, N_frames_for_activity):
+def save_images_annotations(images_np, output_path, actions, activities, N_frames_for_activity, gazes=None):
    os.makedirs(output_path, exist_ok=True)
    img_dir = os.path.join(output_path, "frames")
    os.makedirs(img_dir, exist_ok=True)
@@ -422,14 +457,27 @@ def save_images_annotations(images_np, output_path, actions, activities, N_frame
 
       cv2.imwrite(frame_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-      block_idx = i // N_frames_for_activity  
+      block_idx = i // N_frames_for_activity
+      
+      h, w = img.shape[:2]
+      gaze_x = gazes[i]["gaze_x"] if gazes and i < len(gazes) else None
+      gaze_y = gazes[i]["gaze_y"] if gazes and i < len(gazes) else None
+      
+      if gaze_x is not None and gaze_y is not None:
+         gaze_x_rot = h - gaze_y
+         gaze_y_rot = gaze_x
+      else:
+         gaze_x_rot = None
+         gaze_y_rot = None
 
       csv_records.append({
          "frame_index": i,
          "frame_file": frame_name,
          "action": actions[i] if i < len(actions) else "",
          "activity_block_id": block_idx,
-         "activity": activities[block_idx] if block_idx < len(activities) else ""
+         "activity": activities[block_idx] if block_idx < len(activities) else "",
+         "gaze_x": gaze_x_rot,
+         "gaze_y": gaze_y_rot
       })
 
    with open(os.path.join(output_path, "actions.txt"), "w") as f:
@@ -445,27 +493,76 @@ def save_images_annotations(images_np, output_path, actions, activities, N_frame
 
    print(f"Saved:\n  {len(images_np)} frames\n  {len(actions)} actions\n  {len(activities)} activities")
 
+def get_gaze_projection(aea_data_provider, device_time_ns, depth_m=1.0):
+   rgb_stream_label = aea_data_provider.vrs.get_label_from_stream_id(RGB_STREAM_ID)
+   device_calibration = aea_data_provider.vrs.get_device_calibration()
+   rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
+
+   eye_gaze = aea_data_provider.mps.get_general_eyegaze(device_time_ns)
+   
+   if eye_gaze is None:
+      return None, None
+   
+   gaze_vector_in_cpf = get_eyegaze_point_at_depth(eye_gaze.yaw, eye_gaze.pitch, depth_m)
+   T_device_CPF = device_calibration.get_transform_device_cpf()
+   gaze_center_in_camera = (
+      rgb_camera_calibration.get_transform_device_camera().inverse()
+      @ T_device_CPF
+      @ gaze_vector_in_cpf
+   )
+   gaze_projection = rgb_camera_calibration.project(gaze_center_in_camera)
+   
+   if gaze_projection is None:
+      return None, None
+   
+   return gaze_projection[0], gaze_projection[1]
+def get_saliency_map_gaze(gazes_x, gazes_y, H, W, sigma=15):
+   saliency = np.zeros((H, W), dtype=np.float32)
+
+   for x, y in zip(gazes_x, gazes_y):
+      if 0 <= x < W and 0 <= y < H:
+         saliency[int(y), int(x)] += 1.0
+
+   saliency = cv2.GaussianBlur(saliency, (0, 0), sigma)
+   saliency = saliency / saliency.max()
+   saliency = (saliency * 255).astype(np.uint8)
+   return saliency
+
+def get_gazes_for_frames(aea_data_provider, timestamps_ns):
+   gazes = []
+   for ts in timestamps_ns:
+      x, y = get_gaze_projection(aea_data_provider, ts)
+      gazes.append({"gaze_x": x, "gaze_y": y})
+   return gazes
+   
+      
 def annotate_clip(model, processor, input_clip_path, input_clip_name, output_clip_path, stream_id=RGB_STREAM_ID, n_seconds=EACH_NTH_FRAME_SEC, local_window = LOCAL_WINDOW_FOR_ACTION_SIZE,N_frames_for_activity = N_FRAMES_FOR_ACTIVITY, image_size=IMAGE_SIZE_VLM_INPUT):
    aea_data_provider = AriaEverydayActivitiesDataProvider(os.path.join(input_clip_path,input_clip_name))
-
-   rgb_images, rgb_timestamps = stream_rgb_vrs_recording(aea_data_provider, RGB_STREAM_ID)
    
+   rgb_images, rgb_timestamps = stream_rgb_vrs_recording(aea_data_provider, RGB_STREAM_ID)
+
    timestamps_ns = np.array(rgb_timestamps)
    samples = get_every_nth_second_frame(timestamps_ns, n_seconds=n_seconds)
    
-   rgb_images_to_select = [rgb_images[k] for k in samples] 
+   rgb_images_to_select = [rgb_images[k] for k in samples]
+   timestamps_to_select = [rgb_timestamps[k] for k in samples]
+   
+   gazes = get_gazes_for_frames(aea_data_provider, timestamps_to_select)
    
    actions_in_a_clip = action_annotate(model, processor, rgb_images_to_select, local_window = local_window, image_size=image_size)
    
    activity_in_a_clip = activity_annotate(model, processor, rgb_images_to_select,N_frames_for_activity=N_frames_for_activity, image_size=image_size)
    
-   save_images_annotations(rgb_images_to_select, output_clip_path, actions_in_a_clip, activity_in_a_clip, N_frames_for_activity)
+   save_images_annotations(rgb_images_to_select, output_clip_path, actions_in_a_clip, activity_in_a_clip, N_frames_for_activity, gazes)
    
 def annotate_dataset(model, processor, input_path, output_path, stream_id=RGB_STREAM_ID, n_seconds=EACH_NTH_FRAME_SEC, local_window = LOCAL_WINDOW_FOR_ACTION_SIZE,N_frames_for_activity = N_FRAMES_FOR_ACTIVITY,image_size=IMAGE_SIZE_VLM_INPUT):
-   clip_names = [clip for clip in os.listdir(input_path)]
+   clip_names = [clip for clip in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, clip))]
    for clip_name in tqdm.tqdm(clip_names, desc="Processing clips"):
-      print(f"Processing clip : {clip_name}")
       output_clip_path = os.path.join(output_path, clip_name)
+      if os.path.exists(output_clip_path):
+         print(f"Skipping {clip_name}: already processed")
+         continue
+      print(f"Processing clip : {clip_name}")
       annotate_clip(
          model, 
          processor, 
@@ -519,8 +616,8 @@ def gpu_worker(gpu_id, task_queue, result_queue, model_name, stream_id, n_second
          continue
    
 def annotate_dataset_mp(model_name,num_gpus, input_path, output_path, stream_id=RGB_STREAM_ID, n_seconds=EACH_NTH_FRAME_SEC, local_window = LOCAL_WINDOW_FOR_ACTION_SIZE,N_frames_for_activity = N_FRAMES_FOR_ACTIVITY,image_size=IMAGE_SIZE_VLM_INPUT):
-   num_processes = num_gpus
-   clip_names = [name for name in os.listdir(input_path)]
+   clip_names = [name for name in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, name))]
+   clip_names = [name for name in clip_names if not os.path.exists(os.path.join(output_path, name))]
    total_clips = len(clip_names)
    
    task_queue = mp.Queue()
