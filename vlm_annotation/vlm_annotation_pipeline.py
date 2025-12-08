@@ -1,7 +1,6 @@
 import os
 import random
 from projectaria_tools.projects.aea import (
-    AriaEverydayActivitiesDataPathsProvider,
     AriaEverydayActivitiesDataProvider)
 import numpy as np
 
@@ -11,24 +10,18 @@ from projectaria_tools.core.mps.utils import get_eyegaze_point_at_depth
 
 import cv2
 import tqdm
-import os
 import pandas as pd
 
 # VLM part
-from transformers import LlavaNextProcessor, LlavaNextForConditionalGeneration
 from PIL import Image
-import PIL
 import torch
 
-from torch.multiprocessing import Process, Queue, set_start_method
 import torch.multiprocessing as mp
 
-from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor
-from transformers import BitsAndBytesConfig
-import torch
+from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor, BitsAndBytesConfig,LlavaNextProcessor, LlavaNextForConditionalGeneration
 
 # hyperparameters 
-VLM_ANNOTATOR = "/home/s3758869/models/LLaVA-NeXT-Video-34B-hf" # "/home/s3758869/models/llava-v1.6-mistral-7b-hf" # "/home/s3758869/models/llava-v1.6-34b-hf" #"llava-hf/llava-next-72b-hf" "/home/s3758869/models/llava-next-72b-hf" 
+VLM_ANNOTATOR = "/home/s3758869/models/llava-v1.6-34b-hf" #"/home/s3758869/models/LLaVA-NeXT-Video-34B-hf" # "/home/s3758869/models/llava-v1.6-mistral-7b-hf" # "/home/s3758869/models/llava-v1.6-34b-hf" #"llava-hf/llava-next-72b-hf" "/home/s3758869/models/llava-next-72b-hf" 
 MODEL_CACHE_DIR = "/home/s3758869/models"  
 NUM_GPUS = torch.cuda.device_count() 
 EACH_NTH_FRAME_SEC = 3 # select one frame in this amount of seconds
@@ -37,9 +30,6 @@ IMAGE_SIZE_VLM_INPUT =  336 # image size for LLaVA annotation
 LOCAL_WINDOW_FOR_ACTION_SIZE = 1 # amount of images at each timestamp sent for action recogntion. If eg 3, at second N, context is frame one second befor and after
 FOUR_BIT_QUANTIZATION = True # whether to quantize LLaVA model to reduce VRAM usage
 EIGHT_BIT_QUANTIZATION = False
-
-#todo : add support for https://huggingface.co/docs/transformers/en/model_doc/video_llava
-# https://huggingface.co/docs/transformers/en/model_doc/llava_next_video
 
 # data location
 INPUT_DATA_FOLDER = "/deepstore/datasets/dmb/ComputerVision/information_retrieval/AriaEA"
@@ -606,18 +596,22 @@ def annotate_dataset(model, processor, input_path, output_path, stream_id=RGB_ST
       else:
          print(f"Processing clip: {clip_name}")
          
-      annotate_clip(
-         model, 
-         processor, 
-         input_path, 
-         clip_name, 
-         output_clip_path, 
-         stream_id, 
-         n_seconds, 
-         local_window,
-         N_frames_for_activity,
-         image_size
-      )
+      try:
+         annotate_clip(
+            model, 
+            processor, 
+            input_path, 
+            clip_name, 
+            output_clip_path, 
+            stream_id, 
+            n_seconds, 
+            local_window,
+            N_frames_for_activity,
+            image_size
+         )
+      except RuntimeError as e:
+         print(e)
+         continue
       
 def gpu_worker(gpu_id, task_queue, result_queue, model_name, stream_id, n_seconds, local_window, N_frames_for_activity, image_size):
    device = f"cuda:{gpu_id}"
