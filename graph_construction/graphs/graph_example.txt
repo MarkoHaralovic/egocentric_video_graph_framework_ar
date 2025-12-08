@@ -1,0 +1,63 @@
+full graph, sentence: The camera wearer is walking with a phone through a long hallway full of portraits.
+
+graph = {
+    "verb_idx": 1,                       # "walk"
+    "clip_feat": torch.randn(2304),
+
+    "objs": {
+        0: {  # "phone"
+            "obj_feat": torch.randn(1024),
+            # walk WITH phone
+            "rels_vec": torch.tensor([0, 1, 0, 0]),   # with = index 1
+        },
+        1: {  # "hallway"
+            "obj_feat": torch.randn(1024),
+            # walk THROUGH hallway
+            "rels_vec": torch.tensor([0, 0, 1, 0]),   # through = index 2
+        },
+        2: {  # "portraits"
+            "obj_feat": torch.randn(1024),
+            # portraits IN hallway (or generally “in scene”)
+            "rels_vec": torch.tensor([0, 0, 0, 1]),   # in = index 3
+        },
+    }
+}
+
+graph_batch = {
+    "verb_idx":  torch.tensor([1]),        # "walk"
+    "clip_feat": torch.randn(2304),
+
+    "obj_indices": torch.tensor([0, 1, 2]),        # phone, hallway, portraits
+    "obj_feats":   torch.randn(3, 1024),           # each row: obj_feat
+
+    "rels_vecs": torch.tensor([
+        [0., 1., 0., 0.],    # phone      : with
+        [0., 0., 1., 0.],    # hallway    : through
+        [0., 0., 0., 1.],    # portraits  : in
+    ]),
+
+    # all (verb, obj, rel) triplets where rels_vec == 1
+    "triplets": torch.tensor([
+        [1, 0, 1],   # walk, phone,   with
+        [1, 1, 2],   # walk, hallway, through
+        [1, 2, 3],   # walk, portraits, in
+    ], dtype=torch.long),
+}
+
+pruned graph, sentence. The camera wearer is walking with a phone through a long hallway full of portraits.”
+graph_batch = {
+    "verb_idx":  torch.tensor([1]),        # "walk"
+    "clip_feat": torch.randn(2304),
+
+    "obj_indices": torch.tensor([0]),        # phone
+    "obj_feats":   torch.randn(1, 1024),           # each row: obj_feat
+
+    "rels_vecs": torch.tensor([
+        [0., 1., 0., 0.],    # phone      : with
+    ]),
+
+    # all (verb, obj, rel) triplets where rels_vec == 1
+    "triplets": torch.tensor([
+        [1, 0, 1],   # walk, phone,   with
+    ], dtype=torch.long),
+}
