@@ -12,3 +12,7 @@ pillow
 flash-attn
 bitsandbytes
 torch-geometric
+addict
+pycocotools
+supervision
+yapf

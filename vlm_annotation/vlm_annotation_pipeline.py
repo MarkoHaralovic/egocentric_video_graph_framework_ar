@@ -28,7 +28,7 @@ from transformers import BitsAndBytesConfig
 import torch
 
 # hyperparameters 
-VLM_ANNOTATOR = "/home/s3758869/models/llava-v1.6-34b-hf" # "/home/s3758869/models/llava-v1.6-mistral-7b-hf" # "/home/s3758869/models/llava-v1.6-34b-hf" #"llava-hf/llava-next-72b-hf" "/home/s3758869/models/llava-next-72b-hf" 
+VLM_ANNOTATOR = "/home/s3758869/models/LLaVA-NeXT-Video-34B-hf" # "/home/s3758869/models/llava-v1.6-mistral-7b-hf" # "/home/s3758869/models/llava-v1.6-34b-hf" #"llava-hf/llava-next-72b-hf" "/home/s3758869/models/llava-next-72b-hf" 
 MODEL_CACHE_DIR = "/home/s3758869/models"  
 NUM_GPUS = torch.cuda.device_count() 
 EACH_NTH_FRAME_SEC = 3 # select one frame in this amount of seconds
@@ -319,7 +319,6 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
       - Verb: base form, lowercase, no tense (e.g., open, close, take, put, use, wash, cut, pour, eat, drink, look, walk, call).
       - Object: a single simple noun, lowercase, no adjectives (e.g., door, phone, cup, bed, plate, laptop, sink, window).
       - Use only lowercase letters and the underscore `_`. No spaces, commas, or extra words.
-      - If you truly cannot tell, output the word: unknown
 
       Examples:
       - someone opening a door to go outside → open_door
@@ -404,6 +403,12 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
       end  = min(start + N_frames_for_activity, len(images)-1)
 
       images_for_act = images[start:end]
+      
+      if len(images_for_act) == 0:
+         print(f"Warning: No images in block {i}, skipping")
+         activities.append("not_annotated")
+         continue
+         
       images_for_act = [np.rot90(img, k=-1) for img in images_for_act]
 
       redo = True
@@ -411,6 +416,13 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
       act_images = images_for_act[:]
       
       while redo:
+         # Ensure we always have at least one image
+         if len(act_images) == 0:
+            print(f"Error: Image list became empty in block {i}, skipping")
+            result = None
+            redo = False
+            break
+            
          try:
             result = recognize_activity(model, processor, act_images, act_image_size, actions=actions)
             redo = False
@@ -421,7 +433,7 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
                new_num = max(5, current_num - 1)
                act_images = random.sample(act_images, new_num)
                print(f"OOM: Reducing image count to {new_num}")
-            elif act_image_size == 336 and len(act_images) == 5:
+            elif act_image_size == 336 and len(act_images) >= 5:
                act_image_size = 118
                print(f"OOM: Reducing image size to {act_image_size}")
             elif len(act_images) > 2 and act_image_size == 118:
@@ -429,6 +441,10 @@ def activity_annotate(model, processor, images, N_frames_for_activity,image_size
                new_num = max(2, current_num - 1)
                act_images = random.sample(act_images, new_num)
                print(f"OOM: Reducing image count to {new_num}")
+            elif len(act_images) == 2 and act_image_size == 118:
+               # Try with just 1 image
+               act_images = random.sample(act_images, 1)
+               print(f"OOM: Reducing to 1 image")
             else:
                print("OOM: Cannot reduce further, skipping")
                result = None
@@ -537,6 +553,12 @@ def get_gazes_for_frames(aea_data_provider, timestamps_ns):
    
       
 def annotate_clip(model, processor, input_clip_path, input_clip_name, output_clip_path, stream_id=RGB_STREAM_ID, n_seconds=EACH_NTH_FRAME_SEC, local_window = LOCAL_WINDOW_FOR_ACTION_SIZE,N_frames_for_activity = N_FRAMES_FOR_ACTIVITY, image_size=IMAGE_SIZE_VLM_INPUT):
+   actions_file = os.path.join(output_clip_path, "actions.txt")
+   activities_file = os.path.join(output_clip_path, "activities.txt")
+   
+   actions_exist = os.path.exists(actions_file)
+   activities_exist = os.path.exists(activities_file)
+   
    aea_data_provider = AriaEverydayActivitiesDataProvider(os.path.join(input_clip_path,input_clip_name))
    
    rgb_images, rgb_timestamps = stream_rgb_vrs_recording(aea_data_provider, RGB_STREAM_ID)
@@ -549,9 +571,21 @@ def annotate_clip(model, processor, input_clip_path, input_clip_name, output_cli
    
    gazes = get_gazes_for_frames(aea_data_provider, timestamps_to_select)
    
-   actions_in_a_clip = action_annotate(model, processor, rgb_images_to_select, local_window = local_window, image_size=image_size)
+   # Load or annotate actions
+   if actions_exist:
+      print(f"Loading existing actions for {input_clip_name}")
+      with open(actions_file, 'r') as f:
+         actions_in_a_clip = [line.strip() for line in f.readlines()]
+   else:
+      actions_in_a_clip = action_annotate(model, processor, rgb_images_to_select, local_window = local_window, image_size=image_size)
    
-   activity_in_a_clip = activity_annotate(model, processor, rgb_images_to_select,N_frames_for_activity=N_frames_for_activity, image_size=image_size)
+   # Load or annotate activities
+   if activities_exist:
+      print(f"Loading existing activities for {input_clip_name}")
+      with open(activities_file, 'r') as f:
+         activity_in_a_clip = [line.strip() for line in f.readlines()]
+   else:
+      activity_in_a_clip = activity_annotate(model, processor, rgb_images_to_select,N_frames_for_activity=N_frames_for_activity, image_size=image_size)
    
    save_images_annotations(rgb_images_to_select, output_clip_path, actions_in_a_clip, activity_in_a_clip, N_frames_for_activity, gazes)
    
@@ -559,10 +593,19 @@ def annotate_dataset(model, processor, input_path, output_path, stream_id=RGB_ST
    clip_names = [clip for clip in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, clip))]
    for clip_name in tqdm.tqdm(clip_names, desc="Processing clips"):
       output_clip_path = os.path.join(output_path, clip_name)
-      if os.path.exists(output_clip_path):
-         print(f"Skipping {clip_name}: already processed")
+      
+      # Check if both annotations exist
+      actions_file = os.path.join(output_clip_path, "actions.txt")
+      activities_file = os.path.join(output_clip_path, "activities.txt")
+      
+      if os.path.exists(actions_file) and os.path.exists(activities_file):
+         print(f"Skipping {clip_name}: already fully annotated")
          continue
-      print(f"Processing clip : {clip_name}")
+      elif os.path.exists(actions_file) or os.path.exists(activities_file):
+         print(f"Processing {clip_name}: partial annotations found, completing...")
+      else:
+         print(f"Processing clip: {clip_name}")
+         
       annotate_clip(
          model, 
          processor, 

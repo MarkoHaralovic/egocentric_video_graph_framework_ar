@@ -82,7 +82,7 @@ def get_timesformer_visual_backbone(img_size=224, num_classes=600, num_frames=8,
    )
    return model
 
-def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path, model_name, num_frames=8, output_path="./", device="cuda"):
+def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path, model_name, num_frames=8, device="cuda"):
    clips = [clip for clip in os.listdir(input_folder_path)]
    text_backbone = text_backbone.to(device)
    text_backbone.eval()
@@ -98,12 +98,6 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       image_filenames = sorted([img for img in os.listdir(frames_folder) if img.endswith(".jpg")])
       rgb_images = [cv2.cvtColor(cv2.imread(os.path.join(frames_folder, img)), cv2.COLOR_BGR2RGB) for img in image_filenames]
       
-      with open(os.path.join(input_folder_path, clip, "actions.txt"), "r") as f:
-         actions_list = [line.strip() for line in f.readlines()]
-      
-      with open(os.path.join(input_folder_path, clip, "activities.txt"), "r") as f:
-         activities_list = [line.strip() for line in f.readlines()]
-      
       annotations = pd.read_csv(os.path.join(input_folder_path, clip, "annotations.csv"))
       
       activity_blocks_ids = sorted(set(annotations["activity_block_id"]))
@@ -113,9 +107,8 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       activity_labels = []
       gaze_labels = []
       
-      clip_output_path = os.path.join(output_path, clip)
-      os.makedirs(clip_output_path, exist_ok=True)
-      h5_path = os.path.join(clip_output_path, f"features_{model_name}.h5")
+      clip_output_path = os.path.join(input_folder_path, clip)
+      h5_path = os.path.join(clip_output_path, f"activity_features_model_{model_name}_numframes_{num_frames}.h5")
       
       for activity_block in activity_blocks_ids:
          data_block = annotations[annotations["activity_block_id"] == activity_block]
@@ -160,7 +153,6 @@ clip_model_name = "/home/s3758869/models/clip-vit-base-patch32"
 timesformer_model_path = "/home/s3758869/egocentric_video_graph_framework_ar/global_feature_training/timesformer/TimeSformer/checkpoints/TimeSformer_divST_8x32_224_K600.pyth"
 timesformer_model_name_ab = "timesformer_k600_8fr_224"
 INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf"
-OUTPUT_DATA_FOLDER = f"/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf_features_{timesformer_model_name_ab}"
 NUM_FRAMES = 8
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -175,8 +167,6 @@ vision_backbone = get_timesformer_visual_backbone(
 )
 tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_name, cache_dir=MODEL_CACHE_DIR)
 
-os.makedirs(OUTPUT_DATA_FOLDER, exist_ok=True)
-
 process_folder(
    vision_backbone, 
    text_backbone, 
@@ -184,6 +174,5 @@ process_folder(
    INPUT_DATA_FOLDER, 
    timesformer_model_name_ab,
    num_frames=NUM_FRAMES,
-   output_path=OUTPUT_DATA_FOLDER,
    device=device
 )

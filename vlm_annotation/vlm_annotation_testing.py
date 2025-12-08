@@ -54,13 +54,13 @@ def prompt_1(actions, start, end):
          - Use only lowercase letters and the underscore `_`. No spaces, commas, or extra words.
 
          Examples:
+         - someone streching -> exercise_stretch
          - someone opening a door to go outside → open_door
          - someone scrolling on a smartphone → use_phone
          - someone eating the last bites of lunch → finish_lunch
          - someone talking on a phone → talk_phone
-         - someone streching -> exercise_stretch
          IMPORTANT:
-         - Return ONLY the activity label token (like open_door). 
+         - Return ONLY the activity label token. 
          - Do NOT add explanations, sentences, or quotes.
          """
 
@@ -101,6 +101,9 @@ def prompt_2(actions, start, end):
       - Frames mostly show someone sitting on a couch, with one frame opening a door → sit_couch
       - Frames mostly show someone scrolling on a smartphone → use_phone
       - Frames mostly show someone running on a treadmill → exercise_treadmill
+      IMPORTANT:
+         - Return ONLY the activity label token. 
+         - Do NOT add explanations, sentences, or quotes.
       """
    
 def prompt_3(actions, gazes_textual, start, end):
@@ -108,7 +111,8 @@ def prompt_3(actions, gazes_textual, start, end):
    "text": (
          "You are an expert in gaze-based event causal understanding within ego-centric video environments. "
          "You are given {end - start} egocentric images that belong to one short time span.They are ordered in time from earliest to latest."
-         "Your task is to express this main activity across frames. Desribe which action is being perfoermed across input frames. Read the frame-level actions."
+         "Your task is to express this main activity across frames. Desribe which action is being perfoermed across input frames. Read the frame-level actions.
+         Express this main activity as one compact label in the format: <verb>_<object>"
          "The benchmarks should focus on complex, high-level reasoning that integrates gaze dynamics with event interactions.\n\n"
          "**Input data**:\n"
          "1. Visual: first-person RGB frames.\n"
@@ -121,7 +125,13 @@ def prompt_3(actions, gazes_textual, start, end):
          "- Cluster gaze points as natural scene regions (e.g., 'cup rim', 'bottle cap area').\n"
          "- Track gaze trajectory shifts (e.g., 'suddenly locked onto...').\n"
          "- Focus on: Gaze as a predictive signal for upcoming actions; Ambiguous gaze paths that may point to multiple plausible behaviors.\n\n"
-         "Return short and desriptive action annotation, focusing on main activity. Example is: The camera wearer is doing housechores or PeThe camera wearer is exercising"
+         "Return short and desriptive action annotation, focusing on main activity.Examples:
+      - Frames mostly show someone sitting on a couch, with one frame opening a door → sit_couch
+      - Frames mostly show someone scrolling on a smartphone → use_phone
+      - Frames mostly show someone running on a treadmill → exercise_treadmill
+      IMPORTANT:
+         - Return ONLY the activity label token. 
+         - Do NOT add explanations, sentences, or quotes."
          "Gazes are: {gazes_textual}"
       )
    """
@@ -131,7 +141,8 @@ def prompt_4(actions, start, end):
    "text": (
          "You are an expert in gaze-based event causal understanding within ego-centric video environments. "
          "You are given {end - start} egocentric images that belong to one short time span.They are ordered in time from earliest to latest."
-         "Your task is to express this main activity across frames. Desribe which action is being perfoermed across input frames. Read the frame-level actions."
+         "Your task is to express this main activity across frames. Desribe which action is being perfoermed across input frames. Read the frame-level actions.
+         Express this main activity as one compact label in the format:<verb>_<object>"
          "The benchmarks should focus on complex, high-level reasoning that integrates gaze dynamics with event interactions.\n\n"
          "**Input data**:\n"
          "1. Visual: first-person RGB frames.\n"
@@ -144,7 +155,13 @@ def prompt_4(actions, start, end):
          "- Cluster gaze points as natural scene regions (e.g., 'cup rim', 'bottle cap area').\n"
          "- Track gaze trajectory shifts (e.g., 'suddenly locked onto...').\n"
          "- Focus on: Gaze as a predictive signal for upcoming actions; Ambiguous gaze paths that may point to multiple plausible behaviors.\n\n"
-         "Return short and desriptive action annotation, focusing on main activity. Example is: The camera wearer is doing housechores or PeThe camera wearer is exercising"
+         "Examples:
+      - Frames mostly show someone sitting on a couch, with one frame opening a door → sit_couch
+      - Frames mostly show someone scrolling on a smartphone → use_phone
+      - Frames mostly show someone running on a treadmill → exercise_treadmill
+      IMPORTANT:
+         - Return ONLY the activity label token. 
+         - Do NOT add explanations, sentences, or quotes."
       )
    """
    
@@ -210,9 +227,12 @@ def prompt_6(actions, start, end):
     - If no dominant activity exists, output: unknown
 
     Examples:
-    - Mostly using a smartphone → use_phone
+    - Mostly using a smartphone while not performing any other action → use_phone
     - Mostly operating a coffee machine → use_coffee_maker
     - Briefly opening a cabinet but mostly drinking coffee → drink_coffee
+    - Performing strecth in a room -> exercise_stretch
+    - Cooking some food and looking at the food -> cook_food
+    - Watching TV -> watch_tv
 
     Important:
     - Return ONLY the label, nothing else.
@@ -321,7 +341,7 @@ def test_prompts(model, processor, input_folder, output_folder, N_frames_for_act
          img = cv2.imread(img_path)
          img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
          images.append(img)
-      images = random.sample(images, 3)
+      images = random.sample(images, min(3,len(images)))
       
       actions_block = actions_list[start:end]
       actions_str = "\n".join([f"{shorten_action(act)}" for j, act in enumerate(actions_block)])

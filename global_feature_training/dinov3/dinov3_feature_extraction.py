@@ -87,7 +87,7 @@ def get_dinov3_extractor(model_name_or_path, cache_dir=None):
       )
    return feature_extractor
 
-def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path, model_name, pooling="average", output_path="./", device="cuda"):
+def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path, model_name, pooling="average", device="cuda"):
    clips = [clip for clip in os.listdir(input_folder_path)]
    text_backbone = text_backbone.to(device)
    text_backbone.eval()
@@ -101,12 +101,6 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       image_filenames = sorted([img for img in os.listdir(frames_folder) if img.endswith(".jpg")])
       rgb_images = [cv2.cvtColor(cv2.imread(os.path.join(frames_folder, img)), cv2.COLOR_BGR2RGB) for img in image_filenames]
       
-      with open(os.path.join(input_folder_path, clip, "actions.txt"), "r") as f:
-         actions_list = [line.strip() for line in f.readlines()]
-      
-      with open(os.path.join(input_folder_path, clip, "activities.txt"), "r") as f:
-         activities_list = [line.strip() for line in f.readlines()]
-      
       annotations = pd.read_csv(os.path.join(input_folder_path, clip, "annotations.csv"))
       
       activity_blocks_ids = sorted(set(annotations["activity_block_id"]))
@@ -116,9 +110,14 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       activity_labels = []
       gaze_labels = []
       
-      clip_output_path = os.path.join(output_path, clip)
-      os.makedirs(clip_output_path, exist_ok=True)
-      h5_path = os.path.join(clip_output_path, f"features_{model_name}.h5")
+      clip_output_path = os.path.join(input_folder_path, clip)
+      h5_path_activity = os.path.join(clip_output_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
+      h5_path_frame = os.path.join(clip_output_path, f"frame_action_features_model_{model_name}_pooling_{pooling}.h5")
+      
+      frame_visual_feats = []
+      frame_text_feats = []
+      frame_action_labels = []
+      frame_gaze_labels = []
       
       max_len = None
       for activity_block in tqdm.tqdm(activity_blocks_ids, f"Processing {clip}"):
@@ -134,6 +133,20 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
          gaze_x = data_block["gaze_x"].to_numpy()
          gaze_y = data_block["gaze_y"].to_numpy()
          gazes = np.stack([gaze_x, gaze_y], axis=1)
+         
+         for idx, (frame, action, gaze) in enumerate(zip(frames, actions, gazes)):
+            frame_visual_feat = get_visual_features(vision_backbone, [frame], "average")
+            frame_text_feat = get_text_features(text_backbone, tokenizer, [action], "average", device)
+            
+            if isinstance(frame_visual_feat, torch.Tensor):
+               frame_visual_feat = frame_visual_feat.detach().cpu().numpy()
+            if isinstance(frame_text_feat, torch.Tensor):
+               frame_text_feat = frame_text_feat.detach().cpu().numpy()
+            
+            frame_visual_feats.append(frame_visual_feat)
+            frame_text_feats.append(frame_text_feat)
+            frame_action_labels.append(action)
+            frame_gaze_labels.append(gaze)
          
          image_features = get_visual_features(vision_backbone, frames, pooling)
          text_features = get_text_features(text_backbone, tokenizer, actions, pooling, device)
@@ -167,11 +180,22 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       activity_labels = np.array([str(a) for a in activity_labels], dtype=h5py.string_dtype(encoding='utf-8'))
       gaze_feats = np.stack(gaze_labels, axis=0)
 
-      with h5py.File(h5_path, "w") as f:
+      with h5py.File(h5_path_activity, "w") as f:
          f.create_dataset("visual_features", data=visual_feats, dtype="float32")
          f.create_dataset("text_features", data=text_feats, dtype="float32")
          f.create_dataset("activity_labels", data=activity_labels)
          f.create_dataset("gaze_labels", data=gaze_feats)
+      
+      frame_visual_feats = np.stack(frame_visual_feats, axis=0)
+      frame_text_feats = np.stack(frame_text_feats, axis=0)
+      frame_action_labels = np.array([str(a) for a in frame_action_labels], dtype=h5py.string_dtype(encoding='utf-8'))
+      frame_gaze_feats = np.stack(frame_gaze_labels, axis=0)
+      
+      with h5py.File(h5_path_frame, "w") as f:
+         f.create_dataset("visual_features", data=frame_visual_feats, dtype="float32")
+         f.create_dataset("text_features", data=frame_text_feats, dtype="float32")
+         f.create_dataset("action_labels", data=frame_action_labels)
+         f.create_dataset("gaze_labels", data=frame_gaze_feats)
          
      
 POOLING="average"   
@@ -180,7 +204,6 @@ clip_model_path = "/home/s3758869/models/clip-vit-base-patch32"
 dinov3_model_path = "/home/s3758869/models/dinov3-vith16plus-pretrain-lvd1689m"
 dinov3_model_name_ab = "dinov3h16+"
 INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf"
-OUTPUT_DATA_FOLDER = f"/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf_features_{dinov3_model_name_ab}_pooling_{POOLING}"
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -189,8 +212,6 @@ print(f"Using device: {device}")
 vision_backbone = get_dinov3_extractor(dinov3_model_path, cache_dir=None)
 tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_path, cache_dir=None)
 
-os.makedirs(OUTPUT_DATA_FOLDER, exist_ok=True)
-
 process_folder(
    vision_backbone, 
    text_backbone, 
@@ -198,6 +219,5 @@ process_folder(
    INPUT_DATA_FOLDER, 
    dinov3_model_name_ab, 
    POOLING,
-   OUTPUT_DATA_FOLDER,
    device
 )
