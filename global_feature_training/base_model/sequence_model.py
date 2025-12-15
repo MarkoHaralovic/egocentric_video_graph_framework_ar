@@ -57,7 +57,7 @@ class ImageSequenceClassificator(nn.Module):
          
       
       if x_text is not None:
-         x = torch.concat([x_img, x_text], dim=0)
+         x = torch.concat([x_img, x_text], dim=-1)
       else:
          x = x_img
 
