@@ -9,13 +9,16 @@ class SequenceDataset(Dataset):
    def __init__(
       self, 
       input_folder, 
+      clip_names,
       model_name="dinov3h16+",
+      pooling="concat",
       load_visual=True, 
       load_text=False,
       activity_to_idx=None
    ):
       self.input_folder = input_folder
       self.model_name = model_name
+      self.pooling = pooling
       self.load_visual = load_visual
       self.load_text = load_text
       
@@ -25,18 +28,18 @@ class SequenceDataset(Dataset):
       self.h5_paths = []
       self.clip_names = []
       
-      for clip_name in sorted(os.listdir(input_folder)):
+      for clip_name in clip_names:
          clip_path = os.path.join(input_folder, clip_name)
          if not os.path.isdir(clip_path):
             continue
             
-         h5_path = os.path.join(clip_path, f"features_{model_name}.h5")
+         h5_path = os.path.join(clip_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
          if os.path.exists(h5_path):
             self.h5_paths.append(h5_path)
             self.clip_names.append(clip_name)
       
       if len(self.h5_paths) == 0:
-         raise ValueError(f"No h5 files found in {input_folder} with pattern features_{model_name}.h5")
+         raise ValueError(f"No h5 files found in {input_folder} with pattern activity_features_model_{model_name}_pooling_{pooling}.h5")
       
       if activity_to_idx is None:
          self.activity_to_idx = self._build_activity_vocab()
@@ -92,7 +95,11 @@ class SequenceDataset(Dataset):
          if isinstance(activity_label_raw, bytes):
             activity_label_raw = activity_label_raw.decode('utf-8')
          
-         activity_label = self.activity_to_idx.get(activity_label_raw, -1)  
+         if activity_label_raw not in self.activity_to_idx:
+            raise ValueError(f"Activity '{activity_label_raw}' not found in activity_to_idx mapping. "
+                           f"Available activities: {list(self.activity_to_idx.keys())[:10]}...")
+         
+         activity_label = self.activity_to_idx[activity_label_raw]
          output['activity_label'] = torch.tensor(activity_label, dtype=torch.long)
          output['activity_name'] = activity_label_raw
       

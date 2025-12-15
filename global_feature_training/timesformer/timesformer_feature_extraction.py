@@ -94,7 +94,11 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       if not os.path.exists(frames_folder):
          print(f"Skipping {clip}: frames folder not found")
          continue
-         
+      clip_output_path = os.path.join(input_folder_path, clip)
+      h5_path = os.path.join(clip_output_path, f"activity_features_model_{model_name}_numframes_{num_frames}.h5")
+      
+      if os.path.exist(h5_path):
+         continue
       image_filenames = sorted([img for img in os.listdir(frames_folder) if img.endswith(".jpg")])
       rgb_images = [cv2.cvtColor(cv2.imread(os.path.join(frames_folder, img)), cv2.COLOR_BGR2RGB) for img in image_filenames]
       
@@ -106,9 +110,6 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       text_feats = []
       activity_labels = []
       gaze_labels = []
-      
-      clip_output_path = os.path.join(input_folder_path, clip)
-      h5_path = os.path.join(clip_output_path, f"activity_features_model_{model_name}_numframes_{num_frames}.h5")
       
       for activity_block in activity_blocks_ids:
          data_block = annotations[annotations["activity_block_id"] == activity_block]

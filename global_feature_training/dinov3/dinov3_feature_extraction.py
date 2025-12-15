@@ -30,14 +30,18 @@ def get_visual_features(model, images, pooling):
          feat = torch.tensor(result[0])
       else:
          feat = torch.tensor(result)
+      
+      if feat.dim() == 2:
+         feat = feat.mean(dim=0)  
+      
       feats.append(feat)
    
-   feats = torch.stack(feats, dim=0)
+   feats = torch.stack(feats, dim=0)  
    
    if pooling == "average":
-      feats = feats.mean(dim=0)
+      feats = feats.mean(dim=0)  
    elif pooling == "concat":
-      feats = feats.reshape(-1)
+      feats = feats.reshape(-1) 
    
    return feats   
 
@@ -97,6 +101,14 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       if not os.path.exists(frames_folder):
          print(f"Skipping {clip}: frames folder not found")
          continue
+      
+      clip_output_path = os.path.join(input_folder_path, clip)
+      h5_path_activity = os.path.join(clip_output_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
+      h5_path_frame = os.path.join(clip_output_path, f"frame_action_features_model_{model_name}_pooling_{pooling}.h5")
+      h5_path_clip = os.path.join(clip_output_path, f"clip_features_{model_name}.h5")
+      
+      if os.path.exists(h5_path_activity) and os.path.exists(h5_path_frame) and os.path.exists(h5_path_clip):
+         continue
          
       image_filenames = sorted([img for img in os.listdir(frames_folder) if img.endswith(".jpg")])
       rgb_images = [cv2.cvtColor(cv2.imread(os.path.join(frames_folder, img)), cv2.COLOR_BGR2RGB) for img in image_filenames]
@@ -109,15 +121,12 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       text_feats = []
       activity_labels = []
       gaze_labels = []
-      
-      clip_output_path = os.path.join(input_folder_path, clip)
-      h5_path_activity = os.path.join(clip_output_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
-      h5_path_frame = os.path.join(clip_output_path, f"frame_action_features_model_{model_name}_pooling_{pooling}.h5")
-      
       frame_visual_feats = []
       frame_text_feats = []
       frame_action_labels = []
       frame_gaze_labels = []
+      
+      clip_visual_feats = []
       
       max_len = None
       for activity_block in tqdm.tqdm(activity_blocks_ids, f"Processing {clip}"):
@@ -147,6 +156,17 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
             frame_text_feats.append(frame_text_feat)
             frame_action_labels.append(action)
             frame_gaze_labels.append(gaze)
+            clip_visual_feats.append(frame_visual_feat)
+         
+         if pooling == "concat" and len(frames) < max_len:
+            pad_count = max_len - len(frames)
+            last_frame = frames[-1]
+            last_action = actions[-1]
+            last_gaze = gazes[-1:]
+            
+            frames = frames + [last_frame] * pad_count
+            actions = actions + [last_action] * pad_count
+            gazes = np.concatenate([gazes] + [last_gaze] * pad_count, axis=0)
          
          image_features = get_visual_features(vision_backbone, frames, pooling)
          text_features = get_text_features(text_backbone, tokenizer, actions, pooling, device)
@@ -155,20 +175,6 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
             image_features = image_features.detach().cpu().numpy()
          if isinstance(text_features, torch.Tensor):
             text_features = text_features.detach().cpu().numpy()
-         
-         if len(frames) < max_len:
-            pad_count = max_len - len(frames)
-            
-            if pooling == "average":
-               pass
-            else:
-               last_visual = image_features[-1:] if image_features.ndim > 1 else image_features
-               last_text = text_features[-1:] if text_features.ndim > 1 else text_features
-               last_gaze = gazes[-1:]
-               
-               image_features = np.concatenate([image_features] + [last_visual] * pad_count, axis=0)
-               text_features = np.concatenate([text_features] + [last_text] * pad_count, axis=0)
-               gazes = np.concatenate([gazes] + [last_gaze] * pad_count, axis=0)
             
          visual_feats.append(image_features)
          text_feats.append(text_features)
@@ -196,21 +202,25 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
          f.create_dataset("text_features", data=frame_text_feats, dtype="float32")
          f.create_dataset("action_labels", data=frame_action_labels)
          f.create_dataset("gaze_labels", data=frame_gaze_feats)
+      
+      clip_visual_feats = np.stack(clip_visual_feats, axis=0)
+      with h5py.File(h5_path_clip, "w") as f:
+         f.create_dataset("visual_features", data=clip_visual_feats, dtype="float32")
          
      
-POOLING="average"   
+POOLING="concat"   
 MODEL_CACHE_DIR = "/home/s3758869/models"
 clip_model_path = "/home/s3758869/models/clip-vit-base-patch32"
 dinov3_model_path = "/home/s3758869/models/dinov3-vith16plus-pretrain-lvd1689m"
 dinov3_model_name_ab = "dinov3h16+"
-INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf"
+INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf"
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
-vision_backbone = get_dinov3_extractor(dinov3_model_path, cache_dir=None)
-tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_path, cache_dir=None)
+vision_backbone = get_dinov3_extractor(dinov3_model_path, cache_dir=MODEL_CACHE_DIR)
+tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_path, cache_dir=MODEL_CACHE_DIR)
 
 process_folder(
    vision_backbone, 
