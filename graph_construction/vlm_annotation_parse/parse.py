@@ -86,7 +86,6 @@ def standardize_narration(t):
       t = t.replace("The camera wearer", "The_camera_wearer")
       t = t.replace("#Unsure","").replace("#unsure","").replace("#Sammary","").replace("#sammary","").replace("#Summary","")
       t = t.strip()
-      # remove extra whitespaces
       t = re.sub(' +', ' ', t)
       t = re.sub('#\w','',t)
       t = t.strip()
@@ -138,7 +137,6 @@ def parse_annotate_action(action):
       is_object = check_if_obj(token)
       if is_object is not None:
          all_objects.append(is_object)
-         # Also extract noun compounds
          compounds = extract_noun_compounds(token)
          all_objects.extend(compounds)
          
@@ -151,10 +149,10 @@ def parse_annotate_action(action):
    
 def parse_annotate_folder(input_path):
    clips = [clip for clip in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, clip))]
-   objects = set()
-   relationships = set()
-   verbs = set()
-   activities = set()
+   objects = {}
+   relationships = {}
+   verbs = {}
+   activities = {}
    
    for clip in tqdm.tqdm(clips, desc=f"Parsing annotations from {input_path}"):
       rows = []
@@ -165,21 +163,24 @@ def parse_annotate_folder(input_path):
          activities_list = [line.strip() for line in f.readlines()]
       
       for act in activities_list:
-         activities.add(act)
+         activities[act] = activities.get(act, 0) + 1
          
       for i, action in enumerate(actions_list):
          result = parse_annotate_action(action)
          if result[0] is not None:  
             subject, verb, verb_type, direct_object, all_objects, phrasal_verb, preposition_object_pairs, pos_mask, tag_mask, dep_mask = result
             
-            if direct_object: objects.add(direct_object)
-            if all_objects:objects.update(all_objects)
-            verbs.add(verb)
+            if direct_object:
+               objects[direct_object] = objects.get(direct_object, 0) + 1
+            if all_objects:
+               for obj in all_objects:
+                  objects[obj] = objects.get(obj, 0) + 1
+            verbs[verb] = verbs.get(verb, 0) + 1
             
             if preposition_object_pairs:
                for pdict in preposition_object_pairs:
                   for _, v in pdict.items():
-                     relationships.add(v)
+                     relationships[v] = relationships.get(v, 0) + 1
             
             rows.append({
                "frame_id": i,
@@ -200,24 +201,52 @@ def parse_annotate_folder(input_path):
          clip_dataframe.to_csv(os.path.join(input_path, clip, "parse_annotation.csv"), index=False)
    
    if objects:
-      objects_enum = {obj: idx for idx, obj in enumerate(sorted(list(objects)))}
+      objects_enum = {obj: idx for idx, obj in enumerate(sorted(objects.keys()))}
       with open(os.path.join(input_path, "objects.json"), "w") as f:
          json.dump(objects_enum, f, indent=2)
+      
+      with open(os.path.join(input_path, "objects_occurrences.json"), "w") as f:
+         json.dump(objects, f, indent=2)
    
    if relationships:
-      relationships_enum = {rel: idx for idx, rel in enumerate(sorted(list(relationships)))}
+      relationships_enum = {rel: idx for idx, rel in enumerate(sorted(relationships.keys()))}
       with open(os.path.join(input_path, "relationships.json"), "w") as f:
          json.dump(relationships_enum, f, indent=2)
+      
+      with open(os.path.join(input_path, "relationships_occurrences.json"), "w") as f:
+         json.dump(relationships, f, indent=2)
    
    if verbs:
-      verbs_enum = {verb: idx for idx, verb in enumerate(sorted(list(verbs)))}
+      verbs_enum = {verb: idx for idx, verb in enumerate(sorted(verbs.keys()))}
       with open(os.path.join(input_path, "verbs.json"), "w") as f:
          json.dump(verbs_enum, f, indent=2)
+      
+      with open(os.path.join(input_path, "verbs_occurrences.json"), "w") as f:
+         json.dump(verbs, f, indent=2)
 
    if activities:
-      activities_enum = {act: idx for idx, act in enumerate(sorted(list(activities)))}
+      activities_enum = {act: idx for idx, act in enumerate(sorted(activities.keys()))}
       with open(os.path.join(input_path, "activities.json"), "w") as f:
          json.dump(activities_enum, f, indent=2)
+      
+      with open(os.path.join(input_path, "activities_occurrences.json"), "w") as f:
+         json.dump(activities, f, indent=2)
+   
+   statistics = {
+      "total_counts": {
+         "unique_objects": len(objects),
+         "unique_relationships": len(relationships),
+         "unique_verbs": len(verbs),
+         "unique_activities": len(activities),
+         "total_object_occurrences": sum(objects.values()) if objects else 0,
+         "total_relationship_occurrences": sum(relationships.values()) if relationships else 0,
+         "total_verb_occurrences": sum(verbs.values()) if verbs else 0,
+         "total_activity_occurrences": sum(activities.values()) if activities else 0
+      }
+   }
+   
+   with open(os.path.join(input_path, "dataset_statistics.json"), "w") as f:
+      json.dump(statistics, f, indent=2)
          
 def main():
    INPUT_DATASET_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf"

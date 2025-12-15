@@ -5,12 +5,6 @@ from torch.utils.data import Dataset
 from .base_graph import BaseGraph,Node,Edge
 
 class FullActionGraph(BaseGraph):
-   """
-   Explicit graph for one verb-centric clip:
-   nodes: CW, one verb node, all object nodes
-   edges: CW->verb (agent), verb->object (rels)
-   """
-
    def __init__(self, verbs, objs, rels):
       super(BaseGraph).__init__(verbs, objs, rels)
       self.nodes: Dict[int, Node] = {}
@@ -32,7 +26,6 @@ class FullActionGraph(BaseGraph):
       self.nodes[cw_id] = cw_node
 
       # 2) Verb node
-      verb_idx = verb_idx.item()
       verb_id = node_id_counter
       node_id_counter += 1
       verb_node = self.new_verb_node(verb_id, verb_idx, clip_feat)
@@ -48,8 +41,8 @@ class FullActionGraph(BaseGraph):
 
       obj_id_map: Dict[int, int] = {}  # obj_idx -> node_id
 
-      for row_idx, obj_idx in enumerate(obj_indices.tolist()):
-         obj_feat = obj_feats[row_idx]                # (1024,)
+      for object_num, obj_idx in enumerate(obj_indices.tolist()):
+         obj_feat = obj_feats[object_num]                # (1024,)
          node_id = node_id_counter
          node_id_counter += 1
 
@@ -58,7 +51,7 @@ class FullActionGraph(BaseGraph):
          obj_id_map[obj_idx] = node_id
 
          # Add edges for all relationships where rel_vec == 1
-         rels_vec = rels_vecs[row_idx]               # (num_rels,)
+         rels_vec = rels_vecs[object_num]               # (num_rels,)
          for rel_idx in torch.where(rels_vec > 0)[0].tolist():
                self.edges.append(self.rel_edge(verb_id, node_id, rel_idx))
 

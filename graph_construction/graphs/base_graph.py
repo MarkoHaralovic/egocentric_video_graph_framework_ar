@@ -7,7 +7,7 @@ class Node:
    node_id: int
    label: str          # "camera_wearer", "drop", "screwdriver"
    node_type: str      # "camera_wearer", "verb", "object"
-   idx: Optional[int]  # index in verbs / objs list (None for camera_wearer)
+   idx: Optional[int]  
    feat: Optional[torch.Tensor]  # clip_feat for verb, obj_feat for object
 
 
@@ -16,7 +16,7 @@ class Edge:
    src: int
    dst: int
    rel_idx: Optional[int]     # index in rels list, or None (e.g. camera_wearer->verb)
-   rel_label: str             # e.g. "agent", "direct_obj", "on", "with"
+   rel_label: str             #"agent", "direct_obj", "on", "with"
  
 class BaseGraph:
    def __init__(self, verbs: List[str], objs: List[str], rels: List[str]):

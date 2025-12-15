@@ -210,3 +210,4 @@ __marimo__/
 global_feature_training/timesformer/TimeSformer
 outputs
 slurm_scripts
+slurm_outputs

@@ -318,7 +318,7 @@ def recognize_activity(model, processor, images_np, image_size = IMAGE_SIZE_VLM_
       - someone talking on a phone → talk_phone
       - someone streching -> exercise_stretch
       IMPORTANT:
-      - Return ONLY the activity label token (like open_door). 
+      - Return ONLY the activity label token. 
       - Do NOT add explanations, sentences, or quotes.
       
       Previous actions based on single frame were : {actions}

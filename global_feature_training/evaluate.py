@@ -1,1 +1,0 @@
-# todo : code for activity recognition based on global features from arbitrary backbone
