@@ -1,8 +1,6 @@
 from tqdm import tqdm
-import torch
 import torch.nn.functional as F
 import numpy as np
-from torch.distributions.utils import logits_to_probs
 from .evaluate import evaluate, evaluation_metrics
 
 def train(
@@ -20,7 +18,7 @@ def train(
     all_targets = []
     total_loss = 0.0
     
-    for batch_id, data_dict in tqdm(enumerate(data_loader), desc="Processing train dataloader"):
+    for batch_id, data_dict in tqdm(enumerate(data_loader), desc="Processing train dataloader", total = len(data_loader)):
         image_embeddings = data_dict["visual_features"].to(device)
         
         if text_features and "text_features" in data_dict:
@@ -70,7 +68,8 @@ def do_epoch(
     train_loader,
     validate_loader,
     global_step,
-    num_classes,
+    num_classes_train,
+    num_classes_val,
     text_features=False
 ):
     global_step, train_epoch_result = train(
@@ -79,7 +78,7 @@ def do_epoch(
         train_loader,
         device,
         global_step=global_step,
-        num_classes=num_classes,
+        num_classes=num_classes_train,
         text_features=text_features
     )
 
@@ -89,7 +88,7 @@ def do_epoch(
         net, 
         validate_loader, 
         device,
-        num_classes=num_classes,
+        num_classes=num_classes_val,
         text_features=text_features
     )
     

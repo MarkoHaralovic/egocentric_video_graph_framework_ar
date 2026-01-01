@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import torch
 import json
 import os
@@ -9,6 +13,7 @@ from global_feature_training.dinov3.dinov3_feature_extraction import (
     get_dinov3_extractor,
 )
 from global_feature_training.data_loading.sequence_dataset import SequenceDataset, feature_collate_fn
+from global_feature_training.data_loading.dataset_split import return_train_val_samples
 from global_feature_training.train.train import do_epoch
 from global_feature_training.train.evaluate import store_model
 
@@ -41,17 +46,21 @@ batch_size = config["data"]["batch_size"]
 num_workers = config["data"]["num_workers"]
 use_text_features = config["model"]["use_text_features"]
 
-with open(activity_to_idx_path, 'r') as f:
-    activity_to_idx = json.load(f)
 
 with open(data_split_path,'r') as f:
     data_split = json.load(f)
 
 pooling = config["model"]["pooling"]
     
+train_samples, val_samples, activity_to_idx = return_train_val_samples()
+print(f"activity_to_idx : {activity_to_idx}")
+print(f"len(train_samples) : {len(train_samples)}")
+print(f"len(val_samples) : {len(val_samples)}")
+
 train_dataset = SequenceDataset(
     input_folder = DINOV3_PRECOMUPTED_FEATS_FOLDER,
     clip_names = data_split["split_summary"]["train"],
+    samples= train_samples,
     model_name = dinov3_model_name,
     pooling = pooling,
     load_visual=True,
@@ -62,12 +71,14 @@ train_dataset = SequenceDataset(
 validation_dataset = SequenceDataset(
     input_folder = DINOV3_PRECOMUPTED_FEATS_FOLDER,
     clip_names = data_split["split_summary"]["validation"],
+    samples = val_samples,
     model_name = dinov3_model_name,
     pooling = pooling,
     load_visual=True,
     load_text=False,
     activity_to_idx = activity_to_idx
 )
+
 assert train_dataset.activity_to_idx == validation_dataset.activity_to_idx
 cls_mapping = train_dataset.activity_to_idx
 
@@ -172,7 +183,8 @@ for epoch in tqdm(range(num_epochs), desc=f"Training for {num_epochs} epochs", u
         train_loader=train_loader,
         validate_loader=val_loader,
         global_step=global_step,
-        num_classes=len(cls_mapping),
+        num_classes_train=len(cls_mapping),
+        num_classes_val=len(validation_dataset.activity_to_idx),
         text_features=use_text_features
     )
     

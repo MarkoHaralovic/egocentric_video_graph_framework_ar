@@ -6,7 +6,7 @@
     "clip_model_path": "/home/s3758869/models/clip-vit-base-patch32",
     "dino_cache_dir": "/home/s3758869/models",
     "clip_cache_dir": "/home/s3758869/models",
-    "linear_layer_input_dim": 12800,
+    "linear_layer_input_dim": 12800, 
     "pooling": "concat",
     "use_precomputed_features": true,
     "use_text_features": false
@@ -20,7 +20,7 @@
     "pin_memory": true
   },
   "training": {
-    "num_epochs": 10,
+    "num_epochs": 20,
     "fc_layers_num": 5,
     "optimizer": "adam",
     "learning_rate": 0.0005,

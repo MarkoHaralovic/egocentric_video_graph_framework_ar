@@ -2,7 +2,6 @@ import os
 import numpy as np
 from sklearn import metrics
 import torch
-from torch.distributions.utils import logits_to_probs
 from tqdm import tqdm
 
 def evaluate(net, data_loader, device, num_classes, text_features = False):
@@ -45,7 +44,7 @@ def evaluation_metrics(y_pred, y_true, num_classes):
 
    results = {
       'acc': metrics.accuracy_score(y_true=y_true, y_pred=y_pred),
-      'f1': metrics.f1_score(y_true=y_true, y_pred=y_pred),
+      'f1': metrics.f1_score(y_true=y_true, y_pred=y_pred,average="macro"),
    }
 
    return results, confusion_matrix
@@ -53,7 +52,11 @@ def evaluation_metrics(y_pred, y_true, num_classes):
 def store_model(
     net, opt, epoch, save_path, metric="f1"
 ):
-    file_name = f"best_train_model_{metric}_epoch_{epoch}.pt"
+    for f in os.listdir(save_path):
+        if f.startswith(f"best_train_model_{metric}_") and f.endswith(".pt"):
+            os.remove(os.path.join(save_path, f))
+    
+    file_name = f"best_model_{metric}_epoch_{epoch}.pt"
     torch.save(
         {
             "epoch": epoch,
@@ -63,3 +66,4 @@ def store_model(
         },
         os.path.join(save_path, file_name),
     )
+    
