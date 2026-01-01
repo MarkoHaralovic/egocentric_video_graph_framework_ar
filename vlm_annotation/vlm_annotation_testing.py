@@ -16,7 +16,7 @@ from vlm_annotation_pipeline import (
    parse_llava_output,
 )
 
-testing_folder = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf/loc1_script4_seq2_rec1"
+testing_folder = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf/loc1_script1_seq1_rec1"
 frames_path = os.path.join(testing_folder, "frames")
 actions_path = os.path.join(testing_folder, "actions.txt")
 activities_path = os.path.join(testing_folder, "activities.txt")
@@ -30,7 +30,6 @@ N_FRAMES_FOR_ACTIVITY = 10
 def shorten_action(action_sentence):
    s = action_sentence.strip()
    return re.sub("The camera wearer is", "", s)
-
 
 def prompt_1(actions, start, end):
    return f"""
@@ -238,6 +237,119 @@ def prompt_6(actions, start, end):
     - Return ONLY the label, nothing else.
     """
     
+def prompt_7(actions, start, end):
+    return f"""
+      You are given several egocentric images that belong to one short time span. 
+      They are ordered in time from earliest to latest.
+
+      Your task:
+      1. Look at ALL the images together.
+      2. Decide the SINGLE main activity the human (camera wearer) is performing across the whole sequence.
+      3. Express this activity as one compact label in the format:
+
+      <verb>_<object>
+
+      Formatting rules:
+      - Use exactly one verb and one object.
+      - Verb: base form, lowercase, no tense (e.g., open, close, take, put, use, wash, cut, pour, eat, drink, look, walk, call).
+      - Object: a single simple noun, lowercase, no adjectives (e.g., door, phone, cup, bed, plate, laptop, sink, window).
+      - Use only lowercase letters and the underscore `_`. No spaces, commas, or extra words.
+
+      Examples:
+      - someone opening a door to go outside → open_door
+      - someone scrolling on a smartphone → use_phone
+      - someone eating the last bites of lunch → finish_lunch
+      - someone running on a treadmill → exercise_treadmill
+      - someone talking on a phone → talk_phone
+      - someone streching -> exercise_stretch
+      IMPORTANT:
+      - Return ONLY the activity label token. (like open_door)
+      - Do NOT add explanations, sentences, or quotes.
+      
+      Previous actions based on single frame were : {actions}
+      """
+    
+    
+def prompt_8(actions, start, end):
+    return f"""
+      You are analyzing egocentric video frames - images captured from a first-person perspective using META smart glasses 
+      mounted on a person's head. These images show exactly what the camera wearer sees as they perform daily activities.
+      
+      Key characteristics of egocentric images:
+      - The viewpoint is from the person's head/eye level, looking outward at the world
+      - You will often see the person's hands, arms, or objects they are manipulating in the foreground
+      - The perspective is naturally shaky and dynamic as the person moves
+      - Objects of interest are typically in the center of view where the person is looking
+      - Background context shows the environment (kitchen, living room, office, etc.)
+      - The camera wearer themselves is NOT visible (except possibly their hands/arms)
+      
+      The images provided are sequential frames ordered chronologically from earliest to latest, capturing a continuous activity.
+
+      Your task:
+      1. Analyze ALL the images together as a temporal sequence.
+      2. Identify the SINGLE main activity the camera wearer is performing across the entire sequence.
+      3. Focus on what the person's hands are doing and what objects they are interacting with.
+      4. Express this activity as one compact label in the format:
+
+      <verb>_<object>
+
+      Formatting rules:
+      - Use exactly one verb and one object.
+      - Verb: base form, lowercase, no tense 
+      - Object: a single simple noun, lowercase, no adjectives 
+      - Use only lowercase letters and the underscore `_`. No spaces, commas, or extra words.
+
+      Examples:
+      - person eating the last bites of lunch from a plate → finish_lunch
+      - person running on a treadmill (legs/floor visible) → exercise_treadmill
+      - person holding a phone to their ear → talk_phone
+      - person stretching their arms or legs (legs visible) → exercise_stretch
+      - person's hands scrolling on a smartphone → use_phone
+      
+      IMPORTANT:
+      - Return ONLY the activity label token. 
+      - Do NOT add explanations, sentences, or quotes, only <verb>_<object>      
+      Previous actions based on single frame were : {actions}
+      """
+      
+def prompt_9(actions, start, end):
+    return f"""
+      You are analyzing egocentric video frames - images captured from a first-person perspective using META smart glasses 
+      mounted on a person's head. These images show exactly what the camera wearer sees as they perform daily activities.
+      
+      Key characteristics of egocentric images:
+      - The viewpoint is from the person's head/eye level, looking outward at the world
+      - You will often see the person's hands, arms, or objects they are manipulating in the foreground
+      - The perspective is naturally shaky and dynamic as the person moves
+      - Objects of interest are typically in the center of view where the person is looking
+      - Background context shows the environment (kitchen, living room, office, etc.)
+      - The camera wearer themselves is NOT visible (except possibly their hands/arms)
+      
+      The images provided are sequential frames ordered chronologically from earliest to latest, capturing a continuous activity.
+
+      Your task:
+      1. Analyze ALL the images together as a temporal sequence.
+      2. Identify the SINGLE main activity the camera wearer is performing across the entire sequence.
+      3. Focus on what the person's hands are doing and what objects they are interacting with.
+      4. Express this activity as one compact label in the format:
+
+      <verb>_<object>
+
+      Formatting rules:
+      - Use exactly one verb and one object.
+      - Verb: base form, lowercase, no tense 
+      - Object: a single simple noun, lowercase, no adjectives 
+      - Use only lowercase letters and the underscore `_`. No spaces, commas, or extra words.
+
+      Examples:
+      - exercise_stretch,eating_lunch,exercise_treadmill,use_phone,exercise_stretch
+      
+      IMPORTANT:
+      - Return ONLY the activity label token. 
+      - Do NOT add explanations, sentences, or quotes, only <verb>_<object>      
+      Previous actions based on single frame were : {actions}
+      """
+      
 def generate_gaze_description(gazes):
    valid_gazes = [(g["gaze_x"], g["gaze_y"]) for g in gazes if g["gaze_x"] is not None and g["gaze_y"] is not None]
    
@@ -322,15 +434,21 @@ def test_prompts(model, processor, input_folder, output_folder, N_frames_for_act
    T = len(frame_files)
    max_activities = (T + N_frames_for_activity - 1) // N_frames_for_activity
    
-   results = {
-      "prompt_1": [],
-      "prompt_2": [],
-      "prompt_3": [],
-      "prompt_4": [],
-      "prompt_5": [],
-      "prompt_6": []
-   }
+   # results = {
+   #    "prompt_1": [],
+   #    "prompt_2": [],
+   #    "prompt_3": [],
+   #    "prompt_4": [],
+   #    "prompt_5": [],
+   #    "prompt_6": []
+   # }
    
+   results = {
+      "prompt_6": [],
+      "prompt_7": [],
+      "prompt_8": [],
+      "prompt_9": []
+   }
    for i in tqdm.tqdm(range(max_activities), desc="Testing prompts on activity blocks"):
       start = i * N_frames_for_activity
       end = min(start + N_frames_for_activity, T)
@@ -353,59 +471,59 @@ def test_prompts(model, processor, input_folder, output_folder, N_frames_for_act
       
       gaze_text = generate_gaze_description(gazes_block)
       
-      try:
-         prompt_text = prompt_1(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_1"].append(parsed)
-         print(f"Prompt 1 result: {parsed}")
-      except Exception as e:
-         results["prompt_1"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 1 ERROR: {e}")
+      # try:
+      #    prompt_text = prompt_1(actions_str, start, end-1)
+      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+      #    parsed = parse_llava_output(result)
+      #    results["prompt_1"].append(parsed)
+      #    print(f"Prompt 1 result: {parsed}")
+      # except Exception as e:
+      #    results["prompt_1"].append(f"ERROR: {str(e)}")
+      #    print(f"Prompt 1 ERROR: {e}")
       
-      try:
-         prompt_text = prompt_2(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_2"].append(parsed)
-         print(f"Prompt 2 result: {parsed}")
-      except Exception as e:
-         results["prompt_2"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 2 ERROR: {e}")
+      # try:
+      #    prompt_text = prompt_2(actions_str, start, end-1)
+      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+      #    parsed = parse_llava_output(result)
+      #    results["prompt_2"].append(parsed)
+      #    print(f"Prompt 2 result: {parsed}")
+      # except Exception as e:
+      #    results["prompt_2"].append(f"ERROR: {str(e)}")
+      #    print(f"Prompt 2 ERROR: {e}")
       
-      try:
-         prompt_text = prompt_3(actions_str, gaze_text, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_3"].append(parsed)
-         print(f"Prompt 3 result: {parsed}")
-      except Exception as e:
-         results["prompt_3"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 3 ERROR: {e}")
+      # try:
+      #    prompt_text = prompt_3(actions_str, gaze_text, start, end-1)
+      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+      #    parsed = parse_llava_output(result)
+      #    results["prompt_3"].append(parsed)
+      #    print(f"Prompt 3 result: {parsed}")
+      # except Exception as e:
+      #    results["prompt_3"].append(f"ERROR: {str(e)}")
+      #    print(f"Prompt 3 ERROR: {e}")
       
-      try:
-         h, w = images[0].shape[:2]
-         saliency_map = generate_saliency_map(gazes_block, h, w)
-         images_with_saliency = images + [saliency_map]
+      # try:
+      #    h, w = images[0].shape[:2]
+      #    saliency_map = generate_saliency_map(gazes_block, h, w)
+      #    images_with_saliency = images + [saliency_map]
          
-         prompt_text = prompt_4(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images_with_saliency, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_4"].append(parsed)
-         print(f"Prompt 4 result: {parsed}")
-      except Exception as e:
-         results["prompt_4"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 4 ERROR: {e}")
+      #    prompt_text = prompt_4(actions_str, start, end-1)
+      #    result = run_activity_recognition(model, processor, images_with_saliency, prompt_text, image_size)
+      #    parsed = parse_llava_output(result)
+      #    results["prompt_4"].append(parsed)
+      #    print(f"Prompt 4 result: {parsed}")
+      # except Exception as e:
+      #    results["prompt_4"].append(f"ERROR: {str(e)}")
+      #    print(f"Prompt 4 ERROR: {e}")
          
-      try:
-         prompt_text = prompt_5(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_5"].append(parsed)
-         print(f"Prompt 5 result: {parsed}")
-      except Exception as e:
-         results["prompt_5"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 5 ERROR: {e}")
+      # try:
+      #    prompt_text = prompt_5(actions_str, start, end-1)
+      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+      #    parsed = parse_llava_output(result)
+      #    results["prompt_5"].append(parsed)
+      #    print(f"Prompt 5 result: {parsed}")
+      # except Exception as e:
+      #    results["prompt_5"].append(f"ERROR: {str(e)}")
+      #    print(f"Prompt 5 ERROR: {e}")
       
       try:
          prompt_text = prompt_6(actions_str, start, end-1)
@@ -416,16 +534,49 @@ def test_prompts(model, processor, input_folder, output_folder, N_frames_for_act
       except Exception as e:
          results["prompt_6"].append(f"ERROR: {str(e)}")
          print(f"Prompt 6 ERROR: {e}")
+      
+      try:
+         prompt_text = prompt_7(actions_str, start, end-1)
+         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+         parsed = parse_llava_output(result)
+         results["prompt_7"].append(parsed)
+         print(f"Prompt 7 result: {parsed}")
+      except Exception as e:
+         results["prompt_7"].append(f"ERROR: {str(e)}")
+         print(f"Prompt 7 ERROR: {e}")
+      
+      try:
+         prompt_text = prompt_8(actions_str, start, end-1)
+         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+         parsed = parse_llava_output(result)
+         results["prompt_8"].append(parsed)
+         print(f"Prompt 8 result: {parsed}")
+      except Exception as e:
+         results["prompt_8"].append(f"ERROR: {str(e)}")
+         print(f"Prompt 8 ERROR: {e}")
+      
+      try:
+         prompt_text = prompt_9(actions_str, start, end-1)
+         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+         parsed = parse_llava_output(result)
+         results["prompt_9"].append(parsed)
+         print(f"Prompt 9 result: {parsed}")
+      except Exception as e:
+         results["prompt_9"].append(f"ERROR: {str(e)}")
+         print(f"Prompt 9 ERROR: {e}")
    
    results_df = pd.DataFrame({
       "block_id": list(range(max_activities)),
       "ground_truth": activities_list[:max_activities],
-      "prompt_1": results["prompt_1"],
-      "prompt_2": results["prompt_2"],
-      "prompt_3": results["prompt_3"],
-      "prompt_4": results["prompt_4"],
-      "prompt_5": results["prompt_5"],
-      "prompt_6": results["prompt_6"]
+      # "prompt_1": results["prompt_1"],
+      # "prompt_2": results["prompt_2"],
+      # "prompt_3": results["prompt_3"],
+      # "prompt_4": results["prompt_4"],
+      # "prompt_5": results["prompt_5"],
+      "prompt_6": results["prompt_6"],
+      "prompt_7": results["prompt_7"],
+      "prompt_8": results["prompt_8"],
+      "prompt_9": results["prompt_9"]
    })
    
    results_df.to_csv(os.path.join(output_folder, "prompt_comparison.csv"), index=False)
@@ -435,14 +586,12 @@ def test_prompts(model, processor, input_folder, output_folder, N_frames_for_act
 
 def main():
    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-   print(f"Loading model on {device}...")
    model, processor = load_llava_model(VLM_ANNOTATOR, device)
    print(f"Model loaded on {model.device}")
    
    output_folder = os.path.join(testing_folder, "testing_prompts")
    results = test_prompts(model, processor, testing_folder, output_folder)
    
-   print("\n=== Summary ===")
    print(results.to_string())
 
 
