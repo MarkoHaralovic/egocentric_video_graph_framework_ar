@@ -13,7 +13,9 @@ def evaluate(net, data_loader, device, num_classes, text_features = False):
     with torch.no_grad():
         for _, data_dict in tqdm(enumerate(data_loader), total = len(data_loader), desc = "Evaluating"):
             image_embeddings = data_dict["visual_features"].to(device)
-            
+            if image_embeddings.dim() == 3:
+                # issue with timesformere where data is [8,1,600] instead of [8,600]
+                image_embeddings = image_embeddings.squeeze(1)
             if text_features and "text_features" in data_dict:
                 text_embeddings = data_dict["text_features"].to(device)
             else:
