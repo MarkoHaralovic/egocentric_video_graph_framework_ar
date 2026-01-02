@@ -26,13 +26,11 @@ print(f"Running experiment: {experiment_name}")
 
 USE_PRECOMPUTED_FEATURES = config["model"]["use_precomputed_features"]
 DINOV3_PRECOMUPTED_FEATS_FOLDER = config["data"]["precomputed_features_folder"]
-data_split_path = config["data"]["split_json_path"]
 dinov3_model_name = config["model"]["name"]
 dinov3_model_path = config["model"]["dinov3_model_path"]
 clip_model_path = config["model"]["clip_model_path"]
 dino_cache_dir = config["model"]["dino_cache_dir"]
 clip_cache_dir = config["model"]["clip_cache_dir"]
-activity_to_idx_path = config["data"]["activity_to_idx_path"]
 device = config["device"]
 
 num_epochs = config["training"]["num_epochs"]
@@ -46,20 +44,21 @@ batch_size = config["data"]["batch_size"]
 num_workers = config["data"]["num_workers"]
 use_text_features = config["model"]["use_text_features"]
 
-
-with open(data_split_path,'r') as f:
-    data_split = json.load(f)
+# data_split_path = "..."  # alternative way to load the data, location based split
+# with open(data_split_path,'r') as f:
+#     data_split = json.load(f)
 
 pooling = config["model"]["pooling"]
     
-train_samples, val_samples, activity_to_idx = return_train_val_samples()
+train_samples, val_samples, activity_to_idx = return_train_val_samples(pooling=pooling)
+
 print(f"activity_to_idx : {activity_to_idx}")
 print(f"len(train_samples) : {len(train_samples)}")
 print(f"len(val_samples) : {len(val_samples)}")
 
 train_dataset = SequenceDataset(
     input_folder = DINOV3_PRECOMUPTED_FEATS_FOLDER,
-    clip_names = data_split["split_summary"]["train"],
+    clip_names = None, #data_split["split_summary"]["train"],
     samples= train_samples,
     model_name = dinov3_model_name,
     pooling = pooling,
@@ -70,7 +69,7 @@ train_dataset = SequenceDataset(
 
 validation_dataset = SequenceDataset(
     input_folder = DINOV3_PRECOMUPTED_FEATS_FOLDER,
-    clip_names = data_split["split_summary"]["validation"],
+    clip_names = None, #data_split["split_summary"]["validation"],
     samples = val_samples,
     model_name = dinov3_model_name,
     pooling = pooling,

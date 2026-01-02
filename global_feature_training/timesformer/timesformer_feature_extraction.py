@@ -1,7 +1,10 @@
+import sys
+import os
+
 import torch
 from torchvision.transforms import v2
 from transformers import AutoTokenizer, CLIPTextModel
-from TimeSformer.timesformer.models.vit import TimeSformer
+from timesformer.models.vit import TimeSformer
 import os
 import tqdm
 import cv2
@@ -83,7 +86,8 @@ def get_timesformer_visual_backbone(img_size=224, num_classes=600, num_frames=8,
    return model
 
 def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path, model_name, num_frames=8, device="cuda"):
-   clips = [clip for clip in os.listdir(input_folder_path)]
+   print(f"input_folder_path : {input_folder_path}")
+   clips = [clip for clip in os.listdir(input_folder_path) if os.path.isdir(os.path.join(input_folder_path, clip))]
    text_backbone = text_backbone.to(device)
    text_backbone.eval()
    vision_backbone = vision_backbone.to(device)
@@ -94,11 +98,13 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       if not os.path.exists(frames_folder):
          print(f"Skipping {clip}: frames folder not found")
          continue
+      
       clip_output_path = os.path.join(input_folder_path, clip)
       h5_path = os.path.join(clip_output_path, f"activity_features_model_{model_name}_numframes_{num_frames}.h5")
       
-      if os.path.exist(h5_path):
+      if os.path.exists(h5_path):
          continue
+      
       image_filenames = sorted([img for img in os.listdir(frames_folder) if img.endswith(".jpg")])
       rgb_images = [cv2.cvtColor(cv2.imread(os.path.join(frames_folder, img)), cv2.COLOR_BGR2RGB) for img in image_filenames]
       
@@ -143,37 +149,43 @@ def process_folder(vision_backbone, text_backbone, tokenizer, input_folder_path,
       gaze_feats = np.stack(gaze_labels, axis=0)
 
       with h5py.File(h5_path, "w") as f:
+         print(f"saving to : {h5_path}")
          f.create_dataset("visual_features", data=visual_feats, dtype="float32")
          f.create_dataset("text_features", data=text_feats, dtype="float32")
          f.create_dataset("activity_labels", data=activity_labels)
          f.create_dataset("gaze_labels", data=gaze_feats)
          
      
-MODEL_CACHE_DIR = "/home/s3758869/models"
-clip_model_name = "/home/s3758869/models/clip-vit-base-patch32"
-timesformer_model_path = "/home/s3758869/egocentric_video_graph_framework_ar/global_feature_training/timesformer/TimeSformer/checkpoints/TimeSformer_divST_8x32_224_K600.pyth"
-timesformer_model_name_ab = "timesformer_k600_8fr_224"
-INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-mistral-7b-hf"
-NUM_FRAMES = 8
+def main():
+   MODEL_CACHE_DIR = "/home/s3758869/models"
+   clip_model_name = "/home/s3758869/models/clip-vit-base-patch32"
+   timesformer_model_path = "/home/s3758869/egocentric_video_graph_framework_ar/global_feature_training/timesformer/TimeSformer/checkpoints/TimeSformer_divST_8x32_224_K600.pyth"
+   timesformer_model_name_ab = "timesformer_k600_8fr_224"
+   INPUT_DATA_FOLDER = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf"
+   NUM_FRAMES = 8
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+   device = "cuda" if torch.cuda.is_available() else "cpu"
+   print(f"Using device: {device}")
 
-vision_backbone = get_timesformer_visual_backbone(
-   img_size=224,
-   num_classes=600,
-   num_frames=NUM_FRAMES,
-   attention_type='divided_space_time',
-   pretrained_model=timesformer_model_path
-)
-tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_name, cache_dir=MODEL_CACHE_DIR)
+   vision_backbone = get_timesformer_visual_backbone(
+      img_size=224,
+      num_classes=600,
+      num_frames=NUM_FRAMES,
+      attention_type='divided_space_time',
+      pretrained_model=timesformer_model_path
+   )
+   tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_name, cache_dir=MODEL_CACHE_DIR)
 
-process_folder(
-   vision_backbone, 
-   text_backbone, 
-   tokenizer, 
-   INPUT_DATA_FOLDER, 
-   timesformer_model_name_ab,
-   num_frames=NUM_FRAMES,
-   device=device
-)
+   print(f"INPUT_DATA_FOLDER : {INPUT_DATA_FOLDER}")
+   process_folder(
+      vision_backbone, 
+      text_backbone, 
+      tokenizer, 
+      INPUT_DATA_FOLDER, 
+      timesformer_model_name_ab,
+      num_frames=NUM_FRAMES,
+      device=device
+   )
+   
+if __name__ == "__main__":
+   main()

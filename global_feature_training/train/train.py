@@ -20,14 +20,15 @@ def train(
     
     for batch_id, data_dict in tqdm(enumerate(data_loader), desc="Processing train dataloader", total = len(data_loader)):
         image_embeddings = data_dict["visual_features"].to(device)
-        
+        if image_embeddings.dim() == 3:
+            # issue with timesformere where data is [8,1,600] instead of [8,600]
+            image_embeddings = image_embeddings.squeeze(1)
         if text_features and "text_features" in data_dict:
             text_embeddings = data_dict["text_features"].to(device)
         else:
             text_embeddings = None
             
         targets = data_dict["activity_label"].to(device)
-    
         optimizer.zero_grad()
         output = net(x_img=image_embeddings, x_text=text_embeddings)
         loss = F.cross_entropy(output, targets, weight=None)
