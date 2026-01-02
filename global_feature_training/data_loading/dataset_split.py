@@ -53,13 +53,19 @@ def map_or_skip_label(
 def decode_label(x):
     return x.decode("utf-8") if isinstance(x, (bytes, bytearray)) else str(x)
  
-def collect_samples(input_folder, clip_names, model_name, pooling,
+def collect_samples(input_folder, clip_names, model_name, pooling=None,num_frames=None,
                   skip_labels=set(), skip_verbs=set(), skip_nouns=set(), noun_replacement="other", skip_na=True):
    samples = []  # (clip_name, h5_path, block_idx, label_str)
 
    for clip_name in clip_names:
       clip_path = os.path.join(input_folder, clip_name)
-      h5_path = os.path.join(clip_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
+      if pooling is not None:
+         h5_path = os.path.join(clip_path, f"activity_features_model_{model_name}_pooling_{pooling}.h5")
+      elif num_frames is not None:
+         h5_path = os.path.join(clip_path, f"activity_features_model_{model_name}_numframes_{num_frames}.h5")
+      else:
+         raise Exception(f"Define either num_frames or pooling.")
+      
       if not os.path.exists(h5_path):
          continue
 
@@ -99,13 +105,14 @@ def stratified_split(samples, val_ratio=0.2, seed=0, min_val_per_class=1):
    return train, val
  
 
-def return_train_val_samples(input_folder=DATASET_PATH,clips=clips, model_name=model_name, pooling=pooling, skip_labels=skip_labels, skip_verbs = ignored_verbs,
+def return_train_val_samples(input_folder=DATASET_PATH,clips=clips, model_name=model_name, num_frames = None, pooling=None, skip_labels=skip_labels, skip_verbs = ignored_verbs,
                              skip_nouns=ignored_nouns, noun_replacement="other",skip_na=True,val_ratio=VAL_SIZE):
    samples = collect_samples(
       input_folder,
       clips,
       model_name,
       pooling,
+      num_frames,
       skip_labels,
       skip_verbs,
       skip_nouns,

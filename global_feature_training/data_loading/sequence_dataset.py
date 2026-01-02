@@ -12,7 +12,8 @@ class SequenceDataset(Dataset):
       clip_names, 
       samples=None, 
       model_name="dinov3h16+", 
-      pooling="concat", 
+      pooling=None,
+      frames=None, 
       load_visual=True, 
       load_text=False, 
       activity_to_idx=None
@@ -20,6 +21,7 @@ class SequenceDataset(Dataset):
       self.input_folder = input_folder
       self.model_name = model_name
       self.pooling = pooling
+      self.frames = frames
       self.load_visual = load_visual
       self.load_text = load_text
       
@@ -52,7 +54,11 @@ class SequenceDataset(Dataset):
       self.clip_names = []
       
       for clip_name in clip_names:
-         h5_path = os.path.join(self.input_folder, clip_name, f"activity_features_model_{self.model_name}_pooling_{self.pooling}.h5")
+         if self.pooling is not None:
+            h5_path = os.path.join(self.input_folder, clip_name, f"activity_features_model_{self.model_name}_pooling_{self.pooling}.h5")
+         elif self.frames is not None:
+            h5_path = os.path.join(self.input_folder, clip_name, f"activity_features_model_{self.model_name}_numframes_{self.frames}.h5")
+         
          if os.path.exists(h5_path):
             self.h5_paths.append(h5_path)
             self.clip_names.append(clip_name)
