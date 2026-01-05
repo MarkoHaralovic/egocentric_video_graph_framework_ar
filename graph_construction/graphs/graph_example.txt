@@ -1,26 +1,35 @@
-full graph, sentence: The camera wearer is walking with a phone through a long hallway full of portraits.
+full graph, sentence: The camera wearer is walking with a phone through a long hallway full of portraits holding a camera.
 
 graph = {
     "verb_idx": 1,                       # "walk"
     "clip_feat": torch.randn(2304),
-
+    
+    "aux_verb_idx" : 43,                # "hold"
+    
     "objs": {
         0: {  # "phone"
             "obj_feat": torch.randn(1024),
             # walk WITH phone
-            "rels_vec": torch.tensor([0, 1, 0, 0]),   # with = index 1
+            "rels_vec": torch.tensor([0, 1, 0, 0,0]),   # with = index 1
         },
         1: {  # "hallway"
             "obj_feat": torch.randn(1024),
             # walk THROUGH hallway
-            "rels_vec": torch.tensor([0, 0, 1, 0]),   # through = index 2
+            "rels_vec": torch.tensor([0, 0, 1, 0,0]),   # through = index 2
         },
         2: {  # "portraits"
             "obj_feat": torch.randn(1024),
             # portraits IN hallway (or generally “in scene”)
-            "rels_vec": torch.tensor([0, 0, 0, 1]),   # in = index 3
+            "rels_vec": torch.tensor([0, 0, 0, 1,0]),   # in = index 3
         },
-    }
+    },
+    "aux_objs": {
+        0: {  # "camera"
+            "obj_feat": torch.randn(1024),
+            # hold WITH camera
+            "rels_vec": torch.tensor([0, 0, 0,0, 1 ]),   # with = index 4
+        },
+    },
 }
 
 graph_batch = {

@@ -18,20 +18,35 @@ def get_subject_verb_pairs(t):
       return subject_verb_pairs
    else: return None       
 
-   
+not_verbs = [
+   "cheese", "counter", "fork", "orange", "oven", "pattern", "shin", 
+   "spoon", "stove", "utensil"]
+
+def get_aux_verbs(t, main_verb_lemma):
+   doc = nlp(t)
+   aux = []
+   for tok in doc:
+      if (tok.pos_ != "VERB") or (tok.lemma_ == main_verb_lemma) or (tok.head.pos_ in ("NOUN", "PROPN")) or (tok.tag_ == "VBN" and tok.dep_ in ("acl", "amod")):
+         continue
+      if tok.dep_ in ("xcomp", "advcl", "conj"):
+         aux.append(tok.lemma_)
+
+   seen = set()
+   return [v for v in aux if not (v in seen or seen.add(v))]
+
 def get_preposition_object_pairs(t):
    doc = nlp(t)
    preposition_object_pairs = []
    for possible_object in doc:
       if possible_object.dep_ == 'pobj' and possible_object.head.dep_ == 'prep':
-         preposition_object_pairs.append({possible_object:possible_object.head.lemma_})
+         pobj_str = noun_phrase(possible_object)
+         prep_str = possible_object.head.lemma_
+         preposition_object_pairs.append({pobj_str: prep_str})
    if len(preposition_object_pairs) > 0: 
       return preposition_object_pairs
    else: return None       
 
-   
 def check_verb(token):
-   """Check verb type given spacy token"""
    if token.pos_ == 'VERB':
       indirect_object = False
       direct_object = False
@@ -50,19 +65,32 @@ def check_verb(token):
          return 'VERB'
       
 def check_dobj(token):
-   if token.dep_ == 'dobj':
-      return str(token)
-   else:
-      return None
+   if token.dep_ == "dobj":
+      return token
+   return None
 
 def check_if_obj(token):
-   if token.pos_ == "NOUN" or token.pos_ == "PROPN":
-      if token.dep_ in ("dobj", "obj"):
+   if token.pos_ in ("NOUN", "PROPN"):
+      # direct/indirect objects
+      if token.dep_ in ("dobj", "obj", "iobj", "dative"):
          return str(token)
-      if token.dep_ in ("iobj", "dative"):
-         return str(token)
+
+      # prepositional object
       if token.dep_ == "pobj" and token.head.dep_ == "prep":
          return str(token)
+
+      # coordinated noun: "couch and picture"
+      if token.dep_ == "conj" and token.head.pos_ in ("NOUN", "PROPN"):
+         # keep it if the head noun is something we would have kept
+         head = token.head
+         if head.dep_ in ("dobj", "obj", "iobj", "dative"):
+            return str(token)
+         if head.dep_ == "pobj" and head.head.dep_ == "prep":
+            return str(token)
+         # also common: conj under another noun in a PP chain
+         if head.dep_ in ("pobj", "conj"):
+            return str(token)
+
    return None
 
 def extract_noun_compounds(token):
@@ -94,19 +122,64 @@ def standardize_narration(t):
       return t.strip()
    else: return ""
    
+def noun_phrase(token):
+   compounds = extract_noun_compounds(token)
+   if compounds: return compounds[0]
+   return str(token)
+
+def norm_obj(s: str) -> str:
+   return " ".join(s.lower().split())
+ 
+def get_aux_verb_object_map(t, aux_verb_lemma, all_objects):
+   doc = nlp(t)
+   all_norm = {norm_obj(o): o for o in all_objects} 
+
+   found = []
+   for v in doc:
+      if v.pos_ != "VERB":
+         continue
+      if v.lemma_ != aux_verb_lemma:
+         continue
+
+      candidate_phrases = []
+
+      for ch in v.children:
+         if ch.dep_ in ("dobj", "obj"):
+               candidate_phrases.append(noun_phrase(ch))
+
+         if ch.dep_ == "prep":
+               for pobj in ch.children:
+                  if pobj.dep_ == "pobj" and pobj.pos_ in ("NOUN", "PROPN"):
+                     candidate_phrases.append(noun_phrase(pobj))
+
+      for cand in candidate_phrases:
+         key = norm_obj(cand)
+         if key in all_norm:
+               found.append(all_norm[key])
+
+      seen = set()
+      found = [x for x in found if not (x in seen or seen.add(x))]
+      return found  
+
+   return []
+
+
 def parse_annotate_action(action):
    standardized = standardize_narration(action)
    preposition_object_pairs = get_preposition_object_pairs(standardized)
    subject_verb_pairs = get_subject_verb_pairs(standardized)
-
    if subject_verb_pairs is None or len(subject_verb_pairs) == 0:
       return None, None, None, None, None, None, None, None, None, None
 
    subj_verb_dict = subject_verb_pairs[0]
    subject, verb = list(subj_verb_dict.keys())[0], list(subj_verb_dict.values())[0]
 
+   aux_verbs = get_aux_verbs(standardized, verb)
+   
    direct_object = None
-   all_objects = []
+   all_objects_map = {}  
+   base_objects = []
+   attributes = []
    pos_mask = None
    tag_mask = None
    dep_mask = None
@@ -132,27 +205,86 @@ def parse_annotate_action(action):
             
       res_dobj = check_dobj(token)
       if res_dobj is not None:
-         direct_object =  res_dobj
+         direct_object = object_record(res_dobj)["raw"]
          
       is_object = check_if_obj(token)
       if is_object is not None:
-         all_objects.append(is_object)
-         compounds = extract_noun_compounds(token)
-         all_objects.extend(compounds)
+         # compounds = extract_noun_compounds(token)
+         # if compounds:
+         #    all_objects.extend(compounds)
+         #    base_objects.append(is_object)
+         #    attributes = [atr for atr in compounds[0].split(is_object)[0].strip().split(" ")]
+         #    attributes.extend(attributes)
+         # else:
+         #    all_objects.append(is_object)
+         rec = object_record(token)
+
+         all_objects_map[rec["raw"]] = {
+            "base_object": rec["base"],
+            "attributes": rec["attrs"],
+         }
+
+         base_objects.append(rec["base"])
+         attributes.extend(rec["attrs"])
+
          
    pos_mask = str(pos_toks)
    tag_mask = str(tag_toks)
    dep_mask= str(dep_toks)
    
-   return subject, verb,verb_type,direct_object, all_objects, phrasal_verb, preposition_object_pairs, pos_mask, tag_mask, dep_mask
+   if direct_object is None and all_objects_map:
+      direct_object = next(iter(all_objects_map.keys()))
+      
+   object_aux_verb = {}
+   for av in aux_verbs:
+      object_aux_verb[av] = get_aux_verb_object_map(doc, av, list(all_objects_map.keys()))
 
-   
+   object_aux_verb = str(object_aux_verb)
+
+   return subject, verb, verb_type, direct_object, all_objects_map, base_objects, attributes, phrasal_verb, preposition_object_pairs, pos_mask, tag_mask, dep_mask, aux_verbs, object_aux_verb
+
+def object_record(token):
+   base_mods = []
+   attr_mods = []
+
+   for ch in token.children:
+      if ch.dep_ in ("compound",) and ch.pos_ in ("NOUN", "PROPN"):
+         base_mods.append(ch)
+
+      if ch.dep_ in ("amod",) and ch.pos_ == "ADJ":
+         attr_mods.append(ch)
+
+      if ch.dep_ == "amod" and ch.pos_ in ("DET",):
+         attr_mods.append(ch)
+
+   base_mods = sorted(base_mods, key=lambda x: x.i)
+   attr_mods = sorted(attr_mods, key=lambda x: x.i)
+
+   base_tokens = base_mods + [token]
+
+   def base_token_str(t):
+      if t.pos_ in ("NOUN", "PROPN"):
+         return t.lemma_.lower()
+      return t.text.lower()
+
+   base_phrase = " ".join([base_token_str(t) for t in base_tokens])
+
+   raw_tokens = sorted(set(attr_mods + base_mods + [token]), key=lambda x: x.i)
+   raw_phrase = " ".join([t.text for t in raw_tokens]).lower()
+
+   attrs = [t.text.lower() for t in attr_mods]
+
+   return {"raw": raw_phrase, "base": base_phrase, "attrs": attrs}
+
+
 def parse_annotate_folder(input_path):
    clips = [clip for clip in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, clip))]
    objects = {}
    relationships = {}
+   relationships["direct_object"] = 0
    verbs = {}
    activities = {}
+   attributes_dict = {}
    
    for clip in tqdm.tqdm(clips, desc=f"Parsing annotations from {input_path}"):
       rows = []
@@ -168,32 +300,38 @@ def parse_annotate_folder(input_path):
       for i, action in enumerate(actions_list):
          result = parse_annotate_action(action)
          if result[0] is not None:  
-            subject, verb, verb_type, direct_object, all_objects, phrasal_verb, preposition_object_pairs, pos_mask, tag_mask, dep_mask = result
-            
-            if direct_object:
-               objects[direct_object] = objects.get(direct_object, 0) + 1
-            if all_objects:
-               for obj in all_objects:
+            subject, verb, verb_type, direct_object, all_objects_map, base_objects,attributes, phrasal_verb, preposition_object_pairs, pos_mask, tag_mask, dep_mask, aux_verbs, object_aux_verb = result
+
+            if base_objects:
+               for obj in base_objects:
                   objects[obj] = objects.get(obj, 0) + 1
+            if attributes:
+               for attr in attributes:
+                  attributes_dict[attr] = attributes_dict.get(attr,0) + 1
             verbs[verb] = verbs.get(verb, 0) + 1
+            for _verb in aux_verbs:
+               verbs[_verb] = verbs.get(_verb, 0) + 1
             
             if preposition_object_pairs:
                for pdict in preposition_object_pairs:
                   for _, v in pdict.items():
                      relationships[v] = relationships.get(v, 0) + 1
             
+               
             rows.append({
                "frame_id": i,
                "subject": str(subject),
                "verb": verb,
                "verb_type": verb_type,
                "direct_object": direct_object,
-               "all_objects": str(all_objects),
+               "all_objects": json.dumps(all_objects_map, ensure_ascii=False),
                "phrasal_verb": phrasal_verb,
                "preposition_object_pairs": str(preposition_object_pairs),
                "pos_mask": pos_mask,
                "tag_mask": tag_mask,
-               "dep_mask": dep_mask
+               "dep_mask": dep_mask,
+               "aux_verbs" : aux_verbs,
+               "object_aux_verb" : object_aux_verb
             })
       
       if rows:
@@ -232,16 +370,26 @@ def parse_annotate_folder(input_path):
       with open(os.path.join(input_path, "activities_occurrences.json"), "w") as f:
          json.dump(activities, f, indent=2)
    
+   if attributes_dict:
+      attributes_enum = {attribute: idx for idx, attribute in enumerate(sorted(attributes_dict.keys()))}
+      with open(os.path.join(input_path, "attributes.json"), "w") as f:
+         json.dump(attributes_enum, f, indent=2)
+      
+      with open(os.path.join(input_path, "attributes_occurrences.json"), "w") as f:
+         json.dump(attributes_dict, f, indent=2)
+
    statistics = {
       "total_counts": {
          "unique_objects": len(objects),
          "unique_relationships": len(relationships),
          "unique_verbs": len(verbs),
          "unique_activities": len(activities),
+         "unique_attributes" : len(attributes_dict),
          "total_object_occurrences": sum(objects.values()) if objects else 0,
          "total_relationship_occurrences": sum(relationships.values()) if relationships else 0,
          "total_verb_occurrences": sum(verbs.values()) if verbs else 0,
-         "total_activity_occurrences": sum(activities.values()) if activities else 0
+         "total_activity_occurrences": sum(activities.values()) if activities else 0,
+         "total_attributes_occurences" : sum(attributes_dict.values()) if attributes_dict else 0
       }
    }
    
