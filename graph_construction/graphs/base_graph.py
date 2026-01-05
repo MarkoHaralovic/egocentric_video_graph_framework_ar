@@ -1,37 +1,42 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, Optional
 import torch
 
 @dataclass
 class Node:
    node_id: int
    label: str          # "camera_wearer", "drop", "screwdriver"
-   node_type: str      # "camera_wearer", "verb", "object"
+   node_type: str      # "camera_wearer", "verb", "object", "aux_verb"
    idx: Optional[int]  
    feat: Optional[torch.Tensor]  # clip_feat for verb, obj_feat for object
-
+   attr : Optional[str] # attribute for the given object
+   attr_feat : Optional[torch.Tensor] # this can be tex embeddings from clip, but i am using multi_hot representation
+   related_to_verb: Optional[int] = None  # verb_idx this object is related to
 
 @dataclass
 class Edge:
    src: int
    dst: int
-   rel_idx: Optional[int]     # index in rels list, or None (e.g. camera_wearer->verb)
+   rel_idx: Optional[int]    
    rel_label: str             #"agent", "direct_obj", "on", "with"
  
 class BaseGraph:
-   def __init__(self, verbs: List[str], objs: List[str], rels: List[str]):
+   def __init__(self, verbs: Dict, objs: Dict, rels: Dict, attrs = Dict):
       super(BaseGraph).__init__()
       self.verbs = verbs
       self.objs = objs
-      self.rels = rels
+      self.rels = rels # must contain direct_object and aux_direct_object
+      self.attrs = attrs
+      self.node_types = ["camera_wearer", "verb", "object", "aux_verb"]
 
-      self.node_types = ["camera_wearer", "verb", "object"]
-
-      # edge "roles" on top of rels
-      # camera_wearer -> verb: 'agent'
-      # verb -> obj: one of rels (direct_obj, on, with, ...)
-      self.special_rels = ["agent"]  # camera_wearer -> verb
-      self.all_edge_labels = self.special_rels + rels
+      self.id_to_verb = {v:k for k,v in self.verbs.items()}
+      self.id_to_objs = {v:k for k,v in self.objs.items()}
+      self.id_to_rels = {v:k for k,v in self.rels.items()}
+      self.id_to_attrs= {v:k for k,v in self.attrs.items()}
+      
+      # camera_wearer -> verb: agent
+      self.special_rels = ["agent", "same_as"]  
+      self.all_edge_labels = self.special_rels + list(rels.keys())
 
    def new_camera_wearer_node(self, node_id: int) -> Node:
       return Node(
@@ -40,26 +45,45 @@ class BaseGraph:
          node_type="camera_wearer",
          idx=None,
          feat=None,
+         attr=None,
+         attr_feat=None
       )
 
-   def new_verb_node(self, node_id: int, verb_idx: int, clip_feat: torch.Tensor) -> Node:
+
+   def new_main_verb_node(self, node_id: int, verb : str, clip_feat: torch.Tensor) -> Node:
       return Node(
          node_id=node_id,
-         label=self.verbs[verb_idx],
+         label=verb,
          node_type="verb",
-         idx=verb_idx,
+         idx=self.verbs[verb],
          feat=clip_feat,   # cframe wise feature
+         attr=None,
+         attr_feat=None         
       )
-
-   def new_object_node(self, node_id: int, obj_idx: int, obj_feat: torch.Tensor) -> Node:
+      
+   def new_aux_verb_node(self, node_id: int, verb : str, clip_feat: torch.Tensor) -> Node:
       return Node(
          node_id=node_id,
-         label=self.objs[obj_idx],
+         label=verb,
+         node_type="aux_verb",
+         idx=self.verbs[verb],
+         feat=None,
+         attr=None,
+         attr_feat=None 
+      )   
+      
+   def new_object_node(self, node_id: int, obj_idx: int, obj_feat: torch.Tensor, attr : str, attr_feat : torch.Tensor, verb_idx: int = None) -> Node:
+      return Node(
+         node_id=node_id,
+         label=self.id_to_objs[obj_idx],
          node_type="object",
          idx=obj_idx,
          feat=obj_feat,    # object feature
+         attr=attr,
+         attr_feat=attr_feat,
+         related_to_verb=verb_idx
       )
-
+      
    def agent_edge(self, camera_wearer_id: int, verb_id: int) -> Edge:
       return Edge(
          src=camera_wearer_id,
@@ -73,6 +97,13 @@ class BaseGraph:
          src=verb_id,
          dst=obj_id,
          rel_idx=rel_idx,
-         rel_label=self.rels[rel_idx],
+         rel_label=self.id_to_rels[rel_idx],
       )
 
+   def temporal_edge(self, src_obj_id: int, dst_obj_id: int) -> Edge:
+      return Edge(
+         src=src_obj_id, 
+         dst=dst_obj_id, 
+         rel_idx=None, 
+         rel_label="same_as"
+      )
