@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 import torch
 from torch.utils.data import Dataset
-from base_graph import BaseGraph,Node,Edge
+from .base_graph import BaseGraph,Node,Edge
 import torch
 import spacy
 nlp = spacy.load("en_core_web_sm")
@@ -31,6 +31,7 @@ class FullActionGraph(BaseGraph):
       aux_verbs = None,
       aux_direct_objects_map = None,
    ):
+      
       aux_verb_idxs = [self.verbs[aux_verb] for aux_verb in aux_verbs] if aux_verbs is not None else None
       
       obj_data = []  
@@ -42,13 +43,15 @@ class FullActionGraph(BaseGraph):
       rels_vecs = torch.zeros(len(self.objs), len(self.rels))
       for _item in rels_dict:
          obj_name, rel = list(_item.items())[0]
+         if rel not in self.rels or to_singular(objects_atr_map.get(obj_name, {}).get("base_object", "")) not in self.objs:
+            continue
          rels_vecs[self.objs[to_singular(objects_atr_map[obj_name]["base_object"])], self.rels[rel]] = 1.0
       node_id_counter = 0
 
       direct_object_id = self.objs[to_singular(direct_object)]
       rels_vecs[direct_object_id, self.rels["direct_object"]] = 1.0
       
-      aux_direct_objects = aux_direct_objects = [v[0] for v in aux_direct_objects_map.values()] if aux_direct_objects_map else None
+      aux_direct_objects = [v[0] for v in aux_direct_objects_map.values() if v and len(v) > 0] if aux_direct_objects_map else None
 
       aux_direct_object_ids = [self.objs[aux_direct_object] for aux_direct_object in aux_direct_objects]  if aux_direct_objects is not None else None
       if aux_direct_object_ids is not None:
@@ -88,7 +91,12 @@ class FullActionGraph(BaseGraph):
       obj_id_map: Dict[int, int] = {}  # obj_idx -> node_id
       attr_vecs = torch.zeros((len(self.objs), len(self.attrs)))
       for object_num, (obj_idx, orig_name, attributes) in enumerate(obj_data):
-         obj_feat = obj_feats[object_num]         
+         if obj_idx  in obj_feats["objects"]:
+            obj_feat = obj_feats["objects"][obj_idx]['feats']    
+         else:
+            feat_shape =  obj_feats["objects"][next(iter(obj_feats["objects"]))]['feats'].shape if next(iter(obj_feats["objects"])) else torch.Size([256]) 
+            obj_feat = torch.zeros((feat_shape))
+                 
          node_id = node_id_counter
          node_id_counter += 1
          
@@ -96,7 +104,7 @@ class FullActionGraph(BaseGraph):
          for attr in attributes:
             attr_vecs[obj_idx, self.attrs[attr]] = 1.0
          
-         if not obj_idx in aux_direct_object_ids:
+         if aux_direct_object_ids is None or not obj_idx in aux_direct_object_ids:
             obj_node = self.new_object_node(node_id, obj_idx, obj_feat, attributes, attr_vecs[obj_idx], self.verbs[verb])
          else:
             verb_related_to = [k for k, v in aux_direct_objects_map.items() if orig_name in v][0]
