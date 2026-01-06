@@ -98,7 +98,7 @@ def collect_samples(input_folder, clip_names, model_name, pooling=None,num_frame
 
 class GraphDataset(Dataset):
 
-   def __init__(self, input_path, samples):
+   def __init__(self, input_path, samples, activity_to_idx):
       with open(os.path.join(input_path, "verbs.json"), "r") as f:
          self.verbs = json.load(f)
          
@@ -119,7 +119,7 @@ class GraphDataset(Dataset):
       for clip_name, h5_path, _, _, _, _, _,_ in samples:
          self.clip_names[self.h5_to_file_idx[h5_path]] = clip_name
       
-      self.activity_to_idx = activity_to_idx or {a: i for i, a in enumerate(sorted({s[3] for s in samples}))}
+      self.activity_to_idx = activity_to_idx 
       self.idx_to_activity = {v: k for k, v in self.activity_to_idx.items()}
       self.sample_index = [(self.h5_to_file_idx[s[1]], s[2], s[3],s[4], s[5],s[6], s[7]) for s in samples]
       
@@ -171,9 +171,10 @@ class GraphDataset(Dataset):
       output["full_action_graphs"] = action_scene_graphs
       return output
    
-train_samples, val_samples, activity_to_idx =  return_train_val_samples()
-ds = GraphDataset(DATASET_PATH, val_samples)
+def test():
+   train_samples, val_samples, activity_to_idx =  return_train_val_samples()
+   ds = GraphDataset(DATASET_PATH, val_samples, activity_to_idx)
 
-out  =  ds.__getitem__(0)
+   out  =  ds.__getitem__(0)
 
-print(out)
+   print(out)
