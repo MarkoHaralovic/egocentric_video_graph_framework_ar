@@ -9,9 +9,12 @@ nlp = spacy.load("en_core_web_sm")
 
 def to_singular(word: str) -> str:
    doc = nlp(word)
+   return_class =[]
    for tok in doc:
       if tok.pos_ in ("NOUN", "PROPN"):
-         return tok.lemma_.lower()
+         return_class.append(tok.lemma_.lower())
+   if return_class:
+      return " ".join(c for c in return_class)
    return word.lower()
    
 class FullActionGraph(BaseGraph):
@@ -36,9 +39,12 @@ class FullActionGraph(BaseGraph):
       
       obj_data = []  
       for obj_name, obj_info in objects_atr_map.items():
-         obj_idx = self.objs[to_singular(obj_info["base_object"])]
-         obj_data.append((obj_idx, obj_name, obj_info["attributes"]))
-      
+         try:
+            obj_idx = self.objs[to_singular(obj_info["base_object"])]
+            obj_data.append((obj_idx, obj_name, obj_info["attributes"]))
+         except:
+            print(to_singular(obj_info["base_object"]))
+            print(self.objs)  
       obj_indices = [item[0] for item in obj_data]
       rels_vecs = torch.zeros(len(self.objs), len(self.rels))
       for _item in rels_dict:
@@ -48,12 +54,21 @@ class FullActionGraph(BaseGraph):
          rels_vecs[self.objs[to_singular(objects_atr_map[obj_name]["base_object"])], self.rels[rel]] = 1.0
       node_id_counter = 0
 
-      direct_object_id = self.objs[to_singular(direct_object)]
+      try:
+         direct_object_id = self.objs[to_singular(direct_object)]
+      except:
+         print(self.objs)
+         print(to_singular(direct_object))
+         print(direct_object)
       rels_vecs[direct_object_id, self.rels["direct_object"]] = 1.0
       
       aux_direct_objects = [v[0] for v in aux_direct_objects_map.values() if v and len(v) > 0] if aux_direct_objects_map else None
-
-      aux_direct_object_ids = [self.objs[aux_direct_object] for aux_direct_object in aux_direct_objects]  if aux_direct_objects is not None else None
+      
+      try:
+         aux_direct_object_ids = [self.objs[aux_direct_object] for aux_direct_object in aux_direct_objects]  if aux_direct_objects is not None else None
+      except:
+         print(aux_direct_objects)
+         print(self.objs)
       if aux_direct_object_ids is not None:
          for aux_id in aux_direct_object_ids:
             rels_vecs[aux_id, self.rels["aux_direct_object"]] = 1.0
