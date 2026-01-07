@@ -1,16 +1,12 @@
-from typing import List
-from ...graph_construction.graphs.full_graph import FullActionGraph
+from graph_construction.graphs.full_graph import FullActionGraph
 from torch.utils.data import Dataset
 import os
 import json
 from ast import literal_eval
-from tqdm import tqdm
 import h5py
-import cv2
 import pandas as pd
-from ...global_feature_training.data_loading.dataset_split import decode_label,map_or_skip_label, stratified_split
+from global_feature_training.data_loading.dataset_split import decode_label, map_or_skip_label, stratified_split
 import pickle
-import numpy as np
 import torch
 
 TRAIN_SIZE = 0.8
@@ -124,7 +120,7 @@ class GraphDataset(Dataset):
       self.sample_index = [(self.h5_to_file_idx[s[1]], s[2], s[3],s[4], s[5],s[6], s[7]) for s in samples]
       
    def __len__(self):
-      return len(self.full_graphs)
+      return len(self.sample_index)
 
    def __getitem__(self, idx):
       """Each sample  is:
@@ -171,6 +167,18 @@ class GraphDataset(Dataset):
       output["full_action_graphs"] = action_scene_graphs
       return output
    
+def feature_collate_fn(batch):
+   output = {}
+   
+   output['activity_label'] = torch.stack([item['activity_label'] for item in batch])
+   output['activity_name'] = [item['activity_name'] for item in batch]
+   output['clip_name'] = [item['clip_name'] for item in batch]
+   output['block_idx'] = [item['block_idx'] for item in batch]
+   output['full_action_graphs'] = [item['full_action_graphs'] for item in batch]
+
+   return output
+
+
 def test():
    train_samples, val_samples, activity_to_idx =  return_train_val_samples()
    ds = GraphDataset(DATASET_PATH, val_samples, activity_to_idx)
@@ -178,3 +186,5 @@ def test():
    out  =  ds.__getitem__(0)
 
    print(out)
+   
+   
