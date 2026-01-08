@@ -133,39 +133,53 @@ class GraphDataset(Dataset):
             block_idx
             list of 10 FullActionGraphs
       """
-      file_idx, block_idx, label_str, frame_anns, frame_parsed_anns, frame_feats, obj_feats = self.sample_index[idx]
-      output = {'clip_name': self.clip_names[file_idx], 'block_idx': block_idx}
-      output['activity_label'] = torch.tensor(self.activity_to_idx[label_str], dtype=torch.long)
-      output['activity_name'] = label_str
-      
-      action_scene_graphs =  {}
-      
-      for i, frame_id in enumerate( frame_anns["frame_index"].tolist()):
-         frame_parsed_ann = frame_parsed_anns[frame_parsed_anns["frame_id"] == frame_id]
-         graph = FullActionGraph(self.verbs, self.objs, self.rels, self.attrs)
+      try:
+         file_idx, block_idx, label_str, frame_anns, frame_parsed_anns, frame_feats, obj_feats = self.sample_index[idx]
+         output = {'clip_name': self.clip_names[file_idx], 'block_idx': block_idx}
+         output['activity_label'] = torch.tensor(self.activity_to_idx[label_str], dtype=torch.long)
+         output['activity_name'] = label_str
          
-         verb = frame_parsed_ann["verb"].iloc[0]
-         direct_object = frame_parsed_ann["direct_object"].iloc[0]
-         objects_atr_map = literal_eval(frame_parsed_ann["all_objects"].iloc[0])
-         rels_dict = literal_eval(frame_parsed_ann["preposition_object_pairs"].iloc[0])
-         aux_verbs_str = frame_parsed_ann["aux_verbs"].iloc[0]
-         aux_verbs = literal_eval(aux_verbs_str) if aux_verbs_str and aux_verbs_str != '[]' else None
-         aux_obj_str = frame_parsed_ann["object_aux_verb"].iloc[0]
-         aux_direct_objects_map = literal_eval(aux_obj_str) if aux_obj_str and aux_obj_str != '{}' else None
+         action_scene_graphs =  {}
          
-         graph =  graph.create_graph(
-            verb = verb,
-            direct_object = direct_object,
-            objects_atr_map=objects_atr_map,
-            clip_feat=frame_feats[i],
-            obj_feats=obj_feats[i],
-            rels_dict=rels_dict,
-            aux_verbs=aux_verbs,
-            aux_direct_objects_map=aux_direct_objects_map,
-         )
-         action_scene_graphs[i] = graph
-      output["full_action_graphs"] = action_scene_graphs
-      return output
+         for i, frame_id in enumerate( frame_anns["frame_index"].tolist()):
+            frame_parsed_ann = frame_parsed_anns[frame_parsed_anns["frame_id"] == frame_id]
+            graph = FullActionGraph(self.verbs, self.objs, self.rels, self.attrs)
+            
+            verb = frame_parsed_ann["verb"].iloc[0]
+            direct_object = frame_parsed_ann["direct_object"].iloc[0]
+            objects_atr_val = frame_parsed_ann["all_objects"].iloc[0]
+            objects_atr_map = literal_eval(objects_atr_val) if not pd.isna(objects_atr_val) else {}
+            rels_val = frame_parsed_ann["preposition_object_pairs"].iloc[0]
+            rels_dict = literal_eval(rels_val) if not pd.isna(rels_val) else []
+            aux_verbs_str = frame_parsed_ann["aux_verbs"].iloc[0]
+            aux_verbs = literal_eval(aux_verbs_str) if aux_verbs_str and aux_verbs_str != '[]' and not pd.isna(aux_verbs_str) else None
+            aux_obj_str = frame_parsed_ann["object_aux_verb"].iloc[0]
+            aux_direct_objects_map = literal_eval(aux_obj_str) if aux_obj_str and aux_obj_str != '{}' and not pd.isna(aux_obj_str) else None
+            
+            graph =  graph.create_graph(
+               verb = verb,
+               direct_object = direct_object,
+               objects_atr_map=objects_atr_map,
+               clip_feat=frame_feats[i],
+               obj_feats=obj_feats[i],
+               rels_dict=rels_dict,
+               aux_verbs=aux_verbs,
+               aux_direct_objects_map=aux_direct_objects_map,
+            )
+            action_scene_graphs[i] = graph
+            output["full_action_graphs"] = action_scene_graphs
+         return output
+      except Exception as e:
+         print(e)
+         print(f"ERROR loading sample {idx}: {type(e).__name__}: {e}")
+         print(f"  clip: {self.clip_names[file_idx] if 'file_idx' in locals() else 'unknown'}")
+         print(f"  label: {label_str if 'label_str' in locals() else 'unknown'}")
+         print(f"direct_object : {direct_object}")
+         print(f"objects_atr_map : {objects_atr_map}")
+         print(f"aux_verbs : {aux_verbs}")
+         print(f"aux_direct_objects_map : {aux_direct_objects_map}")
+         
+         raise e
    
 def feature_collate_fn(batch):
    output = {}

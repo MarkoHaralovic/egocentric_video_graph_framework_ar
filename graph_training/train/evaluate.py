@@ -11,7 +11,7 @@ def evaluate(net, data_loader, device, num_classes):
     all_targets = []
     
     with torch.no_grad():
-        for _, data_dict in tqdm(enumerate(data_loader), total = len(data_loader), desc = "Evaluating"):
+        for _, data_dict in enumerate(data_loader):
             targets = data_dict["activity_label"].to(device)
             graphs = data_dict["full_action_graphs"]
                     
@@ -26,7 +26,13 @@ def evaluate(net, data_loader, device, num_classes):
     y_pred_np = np.array(all_preds)
     y_true_np = np.array(all_targets)
 
-    eval_metrics, conf_mat = evaluation_metrics(y_pred_np, y_true_np, num_classes)
+    if len(all_preds) == 0 or len(all_targets) == 0:
+        print("ERROR: No predictions were made during validation! Check data loading.")
+        eval_metrics = {'acc': 0.0, 'f1': 0.0}
+        conf_mat = np.zeros((num_classes, num_classes))
+    else:
+        eval_metrics, conf_mat = evaluation_metrics(y_pred_np, y_true_np, num_classes)
+    
     epoch_result = {}
     epoch_result["eval_metrics"] = eval_metrics
     epoch_result["conf_mat"] = conf_mat
@@ -50,7 +56,9 @@ def store_model(
     for f in os.listdir(save_path):
         if f.startswith(f"best_train_model_{metric}_") and f.endswith(".pt"):
             os.remove(os.path.join(save_path, f))
-    
+        if f.startswith(f"best_model_{metric}_") and f.endswith(".pt"):
+            os.remove(os.path.join(save_path, f))
+            
     file_name = f"best_model_{metric}_epoch_{epoch}.pt"
     torch.save(
         {
