@@ -57,7 +57,9 @@ def store_model(
     for f in os.listdir(save_path):
         if f.startswith(f"best_train_model_{metric}_") and f.endswith(".pt"):
             os.remove(os.path.join(save_path, f))
-    
+        if f.startswith(f"best_model_{metric}_") and f.endswith(".pt"):
+            os.remove(os.path.join(save_path, f))
+            
     file_name = f"best_model_{metric}_epoch_{epoch}.pt"
     torch.save(
         {

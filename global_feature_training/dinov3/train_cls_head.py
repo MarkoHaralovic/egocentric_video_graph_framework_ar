@@ -16,6 +16,7 @@ from global_feature_training.data_loading.sequence_dataset import SequenceDatase
 from global_feature_training.data_loading.dataset_split import return_train_val_samples
 from global_feature_training.train.train import do_epoch
 from global_feature_training.train.evaluate import store_model
+import datetime
 
 config_path = "/home/s3758869/egocentric_video_graph_framework_ar/global_feature_training/dinov3/configs/run_config.json"
 with open(config_path, 'r') as f:
@@ -141,7 +142,7 @@ if scheduler_factor != 1.0:
 
 save_path = os.path.join(
     config["output"]["base_path"],
-    f"dino_model_fc_layer_{fc_layers_num}_num_epoch_{num_epochs}"
+    f"dino_model_fc_layer_{fc_layers_num}_num_epoch_{num_epochs}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
 )
 os.makedirs(save_path, exist_ok=True)
 
