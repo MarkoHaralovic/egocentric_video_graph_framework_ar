@@ -1,31 +1,36 @@
 {
   "experiment_name": "graph_mlp_baseline",
   "mlp" : {
+    "fc_layers_num": 5,
+    "num_graphs" : 10,
     "emb_dim" : 32,
-    "obj_out" : 128,
-    "aux_out" : 32,
+    "obj_out" : 32,
+    "aux_out" : 16,
     "attr_out" : 32,
     "rel_out" : 32,
     "trip_out" :  32,
-    "k_obj" :  4,
+    "k_obj" :  2,
     "k_aux" : 2,
     "k_trip" :  2,
     "clip_dim" : 1280,
-    "obj_feat_dim" : 256
+    "clip_emb_dim" : 1280,
+    "obj_feat_dim" : 256,
+    "graph_emb_dim" : 256,
+    "final_graph_emb_dim" : 64,
+    "graph_pool_interim_feat" : 128
   },
   "data": {
     "input_path" : "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf",
-    "batch_size": 8,
-    "num_workers": 4,
+    "batch_size": 1,
+    "num_workers": 16,
     "pin_memory": true
   },
   "training": {
     "num_epochs": 20,
-    "fc_layers_num": 10,
     "optimizer": "adam",
-    "learning_rate": 0.005,
-    "weight_decay": 0.0001,
-    "scheduler_factor": 0.9,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.00001,
+    "scheduler_factor": 1.0,
     "criterion_metrics": ["f1", "acc"]
   },
   "output": {
