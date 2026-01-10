@@ -51,8 +51,8 @@ if __name__ == "__main__":
     fc_layers_num = mlp_cfg["fc_layers_num"]
     num_graphs = mlp_cfg["num_graphs"]
 
-    use_pool = config["mlp"]["use_proj"]
-    use_proj = config["mlp"]["use_pool"]
+    use_pool = config["mlp"]["use_pool"]
+    use_proj = config["mlp"]["use_proj"]
     
     graph_emb_dim = projector_cfg["graph_emb_dim"]
     layer_norm = projector_cfg.get("layer_norm", True)

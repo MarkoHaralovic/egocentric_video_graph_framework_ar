@@ -203,14 +203,16 @@ class GraphMLP(nn.Module):
       self.pool = use_pool
       self.proj = use_proj
 
-      self.graph_emb_dim = graph_emb_dim if use_pool else self.action_graph_embedder.out_dim 
+      self.graph_emb_dim = graph_emb_dim if use_proj else self.action_graph_embedder.out_dim 
       if self.proj:
          self.graph_proj = [
             nn.Linear(self.input_dim, self.graph_emb_dim),
-            nn.LayerNorm(self.graph_emb_dim) if layer_norm else None,
-            nn.GELU() if gelu else None
          ]
-         
+         if layer_norm:
+            self.graph_proj.append(nn.LayerNorm(self.graph_emb_dim))
+         if gelu:
+            self.graph_proj.append(nn.GELU())
+            
          self.graph_proj = nn.Sequential(*self.graph_proj)
       
       if self.pool:
@@ -250,15 +252,14 @@ class GraphMLP(nn.Module):
                graph_embs.append(graph_embs[-1])
          graph_embs = torch.stack(graph_embs, dim=0)
          
-         import pdb
-         pdb.set_trace()
-         
          
          if self.proj:
             graph_embs = self.graph_proj(graph_embs)
          
          if self.pool:
             graph_embs = self.graph_pool(graph_embs)
+         else:
+            graph_embs = graph_embs.mean(dim=0)
          
          out = self.head(graph_embs)
          

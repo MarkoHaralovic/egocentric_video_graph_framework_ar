@@ -32,16 +32,16 @@ clips = [clip for clip in os.listdir(DATASET_PATH) if os.path.isdir(os.path.join
 def return_train_val_samples(input_folder=DATASET_PATH,clips=clips, model_name=model_name, num_frames = None, pooling=pooling, skip_labels=skip_labels, skip_verbs = ignored_verbs,
                              skip_nouns=ignored_nouns, noun_replacement="other",skip_na=True,val_ratio=VAL_SIZE):
    samples = collect_samples(
-      input_folder,
-      clips,
-      model_name,
-      pooling,
-      num_frames,
-      skip_labels,
-      skip_verbs,
-      skip_nouns,
-      noun_replacement,
-      skip_na
+      input_folder=input_folder,
+      clip_names=clips,
+      model_name=model_name,
+      pooling=pooling,
+      num_frames=num_frames,
+      skip_labels=skip_labels,
+      skip_verbs=skip_verbs,
+      skip_nouns=skip_nouns,
+      noun_replacement=noun_replacement,
+      skip_na=skip_na
    )
    train_samples, val_samples = stratified_split(samples, val_ratio, seed=0)
    
