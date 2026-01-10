@@ -2,7 +2,7 @@ import os
 import numpy as np
 from sklearn import metrics
 import torch
-from tqdm import tqdm
+import torch.nn.functional as F
 
 def evaluate(net, data_loader, device, num_classes):
     net.eval()
@@ -26,12 +26,7 @@ def evaluate(net, data_loader, device, num_classes):
     y_pred_np = np.array(all_preds)
     y_true_np = np.array(all_targets)
 
-    if len(all_preds) == 0 or len(all_targets) == 0:
-        print("ERROR: No predictions were made during validation! Check data loading.")
-        eval_metrics = {'acc': 0.0, 'f1': 0.0}
-        conf_mat = np.zeros((num_classes, num_classes))
-    else:
-        eval_metrics, conf_mat = evaluation_metrics(y_pred_np, y_true_np, num_classes)
+    eval_metrics, conf_mat = evaluation_metrics(y_pred_np, y_true_np, num_classes)
     
     epoch_result = {}
     epoch_result["eval_metrics"] = eval_metrics
@@ -70,3 +65,36 @@ def store_model(
         os.path.join(save_path, file_name),
     )
     
+
+def compute_class_weights(train_dataset, activity_to_idx):
+    counts = torch.zeros(len(activity_to_idx), dtype=torch.float)
+    for _, _, label_str, *_ in train_dataset.sample_index:
+        counts[activity_to_idx[label_str]] += 1
+    total = counts.sum()
+
+    weights = torch.zeros_like(counts)
+    weights = total / (len(activity_to_idx) * counts)
+    return weights
+
+
+def build_loss_fn(loss_cfg, class_weights):
+    name = loss_cfg["name"]
+    gamma = float(loss_cfg.get("focal_gamma", 2.0))
+
+    def ce_loss(logits, targets):
+        return F.cross_entropy(logits, targets, weight=class_weights)
+
+    def focal_loss(logits, targets):
+        logp = F.log_softmax(logits, dim=1)
+        p = logp.exp()
+        pt = p.gather(1, targets.unsqueeze(1)).squeeze(1)
+        alpha = class_weights.to(logits.device) if class_weights is not None else None
+        alpha_factor = alpha[targets] if alpha is not None else 1.0
+        focal_factor = (1.0 - pt) ** gamma
+        loss = -alpha_factor * focal_factor * logp.gather(1, targets.unsqueeze(1)).squeeze(1)
+        return loss.mean()
+    
+    if name == "cross_entropy":
+        return ce_loss
+    if name in {"focal_loss"}:
+        return focal_loss
