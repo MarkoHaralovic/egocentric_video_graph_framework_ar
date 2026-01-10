@@ -1,14 +1,10 @@
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict
 import torch
-from torch.utils.data import Dataset
 from .base_graph import BaseGraph,Node,Edge
 import torch
 import spacy
 nlp = spacy.load("en_core_web_sm")
 
-from dataclasses import dataclass
-from typing import Dict, Optional
 import torch
 
       
@@ -26,7 +22,8 @@ def to_singular(word: str) -> str:
    
 class FullActionGraph(BaseGraph):
    def __init__(self, verbs : Dict, objs : Dict, rels : Dict, attrs : Dict):
-      super(FullActionGraph,self).__init__(verbs, objs, rels, attrs)
+      node_types = ["camera_wearer", "verb", "object", "aux_verb"]
+      super(FullActionGraph,self).__init__(node_types,verbs, objs, rels, attrs)
       self.nodes: Dict[int, Node] = {}
       self.edges: List[Edge] = []
 

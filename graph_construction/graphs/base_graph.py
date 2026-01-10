@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import torch
 
 @dataclass
@@ -21,13 +21,13 @@ class Edge:
    rel_label: str             #"agent", "direct_obj", "on", "with"
  
 class BaseGraph:
-   def __init__(self, verbs: Dict, objs: Dict, rels: Dict, attrs = Dict):
+   def __init__(self,node_types : List, verbs: Dict, objs: Dict, rels: Dict, attrs: Dict = None):
       super(BaseGraph).__init__()
       self.verbs = verbs
       self.objs = objs
-      self.rels = rels # must contain direct_object and aux_direct_object
+      self.rels = rels 
       self.attrs = attrs
-      self.node_types = ["camera_wearer", "verb", "object", "aux_verb"]
+      self.node_types = node_types
 
       self.id_to_verb = {v:k for k,v in self.verbs.items()}
       self.id_to_objs = {v:k for k,v in self.objs.items()}
