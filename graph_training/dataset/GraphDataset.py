@@ -1,4 +1,5 @@
 from graph_construction.graphs.full_graph import FullActionGraph
+from graph_construction.graphs.pruned_graph import PrunedActionGraph
 from torch.utils.data import Dataset
 import os
 import json
@@ -51,7 +52,7 @@ def return_train_val_samples(input_folder=DATASET_PATH,clips=clips, model_name=m
    return train_samples, val_samples, activity_to_idx
 
 def collect_samples(input_folder, clip_names, model_name, pooling=None,num_frames=None,
-                  skip_labels=set(), skip_verbs=set(), skip_nouns=set(), noun_replacement="other", skip_na=True):
+                  skip_labels=set(), skip_verbs=set(), skip_nouns=set(), skip_activities = ["no_annotated", "na"],  noun_replacement="other", skip_na=True):
    
    samples = []  # (clip_name, h5_path, block_idx, label_str)
 
@@ -78,6 +79,8 @@ def collect_samples(input_folder, clip_names, model_name, pooling=None,num_frame
       with h5py.File(h5_path, "r") as f:
          labels = f["activity_labels"][:]
          for block_idx, raw_label in enumerate(labels):
+            if raw_label is skip_activities:
+               continue
             frame_anns = annotations[annotations["activity_block_id"] == block_idx]
             frame_idxs = list(frame_anns["frame_index"]) # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
             frame_clips = f['visual_features'][block_idx]      
@@ -94,7 +97,10 @@ def collect_samples(input_folder, clip_names, model_name, pooling=None,num_frame
 
 class GraphDataset(Dataset):
 
-   def __init__(self, input_path, samples, activity_to_idx):
+   def __init__(self, input_path, samples, activity_to_idx, graph_type):
+      
+      self.graph_type = graph_type
+      
       with open(os.path.join(input_path, "verbs.json"), "r") as f:
          self.verbs = json.load(f)
          
@@ -143,10 +149,14 @@ class GraphDataset(Dataset):
          
          for i, frame_id in enumerate( frame_anns["frame_index"].tolist()):
             frame_parsed_ann = frame_parsed_anns[frame_parsed_anns["frame_id"] == frame_id]
-            graph = FullActionGraph(self.verbs, self.objs, self.rels, self.attrs)
-            
+            if self.graph_type == "full":
+               graph = FullActionGraph(self.verbs, self.objs, self.rels, self.attrs)
+            elif self.graph_type == "pruned":
+               graph = PrunedActionGraph(self.verbs, self.objs, self.rels, self.attrs)
+               
             verb = frame_parsed_ann["verb"].iloc[0]
             direct_object = frame_parsed_ann["direct_object"].iloc[0]
+            gazed_at_object = frame_parsed_ann["gazed_at_object"].iloc[0]
             objects_atr_val = frame_parsed_ann["all_objects"].iloc[0]
             objects_atr_map = literal_eval(objects_atr_val) if not pd.isna(objects_atr_val) else {}
             rels_val = frame_parsed_ann["preposition_object_pairs"].iloc[0]
@@ -156,16 +166,27 @@ class GraphDataset(Dataset):
             aux_obj_str = frame_parsed_ann["object_aux_verb"].iloc[0]
             aux_direct_objects_map = literal_eval(aux_obj_str) if aux_obj_str and aux_obj_str != '{}' and not pd.isna(aux_obj_str) else None
             
-            graph =  graph.create_graph(
-               verb = verb,
-               direct_object = direct_object,
-               objects_atr_map=objects_atr_map,
-               clip_feat=frame_feats[i],
-               obj_feats=obj_feats[i],
-               rels_dict=rels_dict,
-               aux_verbs=aux_verbs,
-               aux_direct_objects_map=aux_direct_objects_map,
-            )
+            if self.graph_type=="full":
+               graph =  graph.create_graph(
+                  verb = verb,
+                  direct_object = direct_object,
+                  objects_atr_map=objects_atr_map,
+                  clip_feat=frame_feats[i],
+                  obj_feats=obj_feats[i],
+                  rels_dict=rels_dict,
+                  aux_verbs=aux_verbs,
+                  aux_direct_objects_map=aux_direct_objects_map,
+                )
+            elif self.graph_type=="pruned":
+               graph =  graph.create_graph(
+                  verb = verb,
+                  gazed_at_object = gazed_at_object,
+                  direct_object = direct_object,
+                  objects_atr_map=objects_atr_map,
+                  clip_feat=frame_feats[i],
+                  obj_feats=obj_feats[i],
+                  rels_dict=rels_dict,
+                )
             action_scene_graphs[i] = graph
             output["full_action_graphs"] = action_scene_graphs
          return output
