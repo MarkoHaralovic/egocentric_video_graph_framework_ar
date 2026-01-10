@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import init
-from typing import Dict,List
+from typing import Dict,List,Optional
 
 class AttentionPooling(nn.Module):
    def __init__(self, in_features, out_features,hidden_features=128):
@@ -78,8 +78,10 @@ class ActionGraphEmbedding(nn.Module):
       self.rel_emb = Embedder(num_rels, emb_dim)
 
       self.obj_pool = MultiQueryPooling(obj_feat_dim + emb_dim, obj_out, k=k_obj)
-      self.aux_pool = MultiQueryPooling(emb_dim, aux_out, k=k_aux)
-
+      if aux_out:
+         self.aux_pool = MultiQueryPooling(emb_dim, aux_out, k=k_aux)
+      else:
+         self.aux_pool = None
       self.attr_proj = nn.Linear(num_attrs * 2, attr_out)
       self.rel_proj = nn.Linear(num_rels * 2, rel_out)
 
@@ -93,7 +95,7 @@ class ActionGraphEmbedding(nn.Module):
 
       self.clip_proj = nn.Linear(clip_dim, clip_emb_dim)
 
-      self.out_dim = (clip_dim + emb_dim + k_aux * aux_out + k_obj * obj_out + attr_out + rel_out + (k_trip * trip_out if use_triplets else 0))
+      self.out_dim = (clip_emb_dim + emb_dim + k_aux * aux_out + k_obj * obj_out + attr_out + rel_out + (k_trip * trip_out if use_triplets else 0))
 
    def forward(self, g: Dict[str, torch.Tensor]) -> torch.Tensor:
       clip = torch.from_numpy(g["clip_feat"]).to(self.device).float()
@@ -105,7 +107,7 @@ class ActionGraphEmbedding(nn.Module):
       else:
          aux_tokens = self.verb_emb(aux_idx.to(self.device))
          if aux_tokens.ndim == 1: aux_tokens = aux_tokens.unsqueeze(0)
-      aux_vec = self.aux_pool(aux_tokens)
+      aux_vec = self.aux_pool(aux_tokens) if self.aux_pool else None
 
       obj_feats = g["obj_feats"].to(self.device)
       if obj_feats.shape[0] == 0:
@@ -149,11 +151,13 @@ class ActionGraphEmbedding(nn.Module):
       parts = [
          self.clip_proj(clip),
          v.to(clip.dtype),
-         aux_vec.to(clip.dtype),
          obj_vec.to(clip.dtype),
          attr_emb.to(clip.dtype),
          rel_emb.to(clip.dtype),
       ]
+      
+      if aux_vec is not None:
+         parts.append(aux_vec.to(clip.dtype))
       if self.use_triplets:
          parts.append(trip_vec.to(clip.dtype))
 
@@ -167,36 +171,54 @@ class GraphMLP(nn.Module):
       num_objects,
       num_rels,
       num_attrs,
-      clip_dim,
-      obj_feat_dim, 
       n_classes, 
       fc_layers_num, 
       graph_emb_dim,
       final_graph_emb_dim,
       graph_pool_interim_feat,   
-      clip_emb_dim,
-      device="cuda"
+      layer_norm,
+      gelu,
+      action_graph_kwargs,
+      device="cuda",
+      use_pool=True,
+      use_proj=True,
+      
       ):
       super().__init__()
       self.device=device
       self.num_graphs = num_graphs
-      self.action_graph_embedder = ActionGraphEmbedding(num_verbs,num_objects,num_rels,num_attrs,clip_dim,clip_emb_dim, obj_feat_dim,device=device)
+
+      self.action_graph_embedder = ActionGraphEmbedding(
+         num_verbs=num_verbs,
+         num_objects=num_objects,
+         num_rels=num_rels,
+         num_attrs=num_attrs,
+         device=device,
+         **action_graph_kwargs,
+      )
       self.input_dim = self.action_graph_embedder.out_dim 
       self.fc_layers_num = fc_layers_num
       self.n_classes =  n_classes
       
-      self.graph_emb_dim = graph_emb_dim
-      self.graph_proj = [
-         nn.Linear(self.input_dim, self.graph_emb_dim),
-         nn.LayerNorm(self.graph_emb_dim),
-         nn.GELU()
-      ]
-      self.graph_proj = nn.Sequential(*self.graph_proj)
+      self.pool = use_pool
+      self.proj = use_proj
+
+      self.graph_emb_dim = graph_emb_dim if use_pool else self.action_graph_embedder.out_dim 
+      if self.proj:
+         self.graph_proj = [
+            nn.Linear(self.input_dim, self.graph_emb_dim),
+            nn.LayerNorm(self.graph_emb_dim) if layer_norm else None,
+            nn.GELU() if gelu else None
+         ]
+         
+         self.graph_proj = nn.Sequential(*self.graph_proj)
       
-      self.final_graph_emb_dim = final_graph_emb_dim
-      self.graph_pool_interim_feat = graph_pool_interim_feat
-      self.graph_pool = AttentionPooling(graph_emb_dim,self.final_graph_emb_dim, hidden_features = self.graph_pool_interim_feat)
-      
+      if self.pool:
+         self.final_graph_emb_dim = final_graph_emb_dim
+         self.graph_pool_interim_feat = graph_pool_interim_feat
+         self.graph_pool = AttentionPooling(self.graph_emb_dim,self.final_graph_emb_dim, hidden_features = self.graph_pool_interim_feat)
+      else:
+         self.final_graph_emb_dim = self.graph_emb_dim
       
       if self.fc_layers_num == 1 :
          fc = nn.Linear(self.final_graph_emb_dim, self.n_classes)
@@ -228,16 +250,17 @@ class GraphMLP(nn.Module):
                graph_embs.append(graph_embs[-1])
          graph_embs = torch.stack(graph_embs, dim=0)
          
-         graph_proj = self.graph_proj(graph_embs)
+         import pdb
+         pdb.set_trace()
          
-         graph_pool = self.graph_pool(graph_proj)
          
-         out =self.head(graph_pool)
+         if self.proj:
+            graph_embs = self.graph_proj(graph_embs)
+         
+         if self.pool:
+            graph_embs = self.graph_pool(graph_embs)
+         
+         out = self.head(graph_embs)
          
          output.append(out)
       return torch.stack(output, dim=0)
-
-
-# graph = _sequence_graphs[0]
-# rep = graph.to_easg_tensors()
-# self.action_graph_embedder(rep)

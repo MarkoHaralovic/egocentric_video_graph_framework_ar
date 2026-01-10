@@ -12,17 +12,30 @@ from datetime import datetime
 from dataset.GraphDataset import GraphDataset,return_train_val_samples,feature_collate_fn
 from modeling.GraphMLP import GraphMLP
 from train.train import do_epoch
+from train.evaluate import compute_class_weights, build_loss_fn
 from train.evaluate import store_model
+import argparse
 
 if __name__ == "__main__":
-    config_path = "/home/s3758869/egocentric_video_graph_framework_ar/graph_training/configs/run_config.json"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_path")
+    args = parser.parse_args()
+    config_path = args.config_path
+    
     with open(config_path, 'r') as f:
         config = json.load(f)
+
+    mlp_cfg = config["mlp"]
+    action_graph_cfg = mlp_cfg["action_graph_embedder"]
+    projector_cfg = mlp_cfg["projector"]
+    attention_pool_cfg = mlp_cfg["attention_pooler"]
 
     experiment_name = config["experiment_name"]
     print(f"Running experiment: {experiment_name}")
 
     device = config["device"]
+    if device == "cuda" and not torch.cuda.is_available():
+        device="cpu"
 
     num_epochs = config["training"]["num_epochs"]
     optimizer_name = config["training"]["optimizer"]
@@ -35,11 +48,19 @@ if __name__ == "__main__":
     num_workers = config["data"]["num_workers"]
     pin_memory = config["data"]["pin_memory"]
     
-    fc_layers_num = config["mlp"]["fc_layers_num"]
-    graph_emb_dim = config["mlp"]["graph_emb_dim"]
-    final_graph_emb_dim = config["mlp"]["final_graph_emb_dim"]
-    graph_pool_interim_feat = config["mlp"]["graph_pool_interim_feat"]
-    clip_emb_dim = config["mlp"]["clip_emb_dim"]
+    fc_layers_num = mlp_cfg["fc_layers_num"]
+    num_graphs = mlp_cfg["num_graphs"]
+
+    use_pool = config["mlp"]["use_proj"]
+    use_proj = config["mlp"]["use_pool"]
+    
+    graph_emb_dim = projector_cfg["graph_emb_dim"]
+    layer_norm = projector_cfg.get("layer_norm", True)
+    gelu = projector_cfg.get("gelu", True)
+
+    graph_pool_interim_feat = attention_pool_cfg["graph_pool_interim_feat"]
+    final_graph_emb_dim = attention_pool_cfg["final_graph_emb_dim"]
+    
     
     train_samples, val_samples, activity_to_idx = return_train_val_samples(pooling="concat")
 
@@ -56,14 +77,28 @@ if __name__ == "__main__":
     with open(os.path.join(data_path, "attributes.json"), "r") as f:
         attrs = json.load(f)  
     
+    graph_type = config["data"].get("graph_type", "full")
+    
+    if graph_type == "pruned":
+        num_rels = len(rels)
+        if "aux_direct_object" in rels:
+            num_rels -= 1
+        if "aux_verb" in rels:
+            num_rels -= 1
+        num_rels += 1  
+    else:
+        num_rels = len(rels)
+    
     print(f"activity_to_idx : {activity_to_idx}")
     print(f"len(train_samples) : {len(train_samples)}")
     print(f"len(val_samples) : {len(val_samples)}")
+    print(f"Graph type : {graph_type}")
 
-    train_dataset = GraphDataset(data_path, train_samples, activity_to_idx)
+    train_dataset = GraphDataset(data_path, train_samples, activity_to_idx, graph_type)
 
-    validation_dataset = GraphDataset(data_path, val_samples, activity_to_idx)
+    validation_dataset = GraphDataset(data_path, val_samples, activity_to_idx, graph_type)
 
+    
     assert train_dataset.activity_to_idx == validation_dataset.activity_to_idx
     cls_mapping = train_dataset.activity_to_idx
 
@@ -86,22 +121,29 @@ if __name__ == "__main__":
     )
 
     model = GraphMLP(
-        num_graphs=config["mlp"]["num_graphs"],
+        num_graphs=num_graphs,
         num_verbs=len(verbs),
         num_objects=len(objs),
-        num_rels=len(rels),
+        num_rels=num_rels,
         num_attrs=len(attrs),
-        clip_dim=config["mlp"]["clip_dim"],
-        obj_feat_dim=config["mlp"]["obj_feat_dim"], 
         n_classes=len(cls_mapping),
         fc_layers_num=fc_layers_num,
         graph_emb_dim=graph_emb_dim,
         final_graph_emb_dim=final_graph_emb_dim,
         graph_pool_interim_feat=graph_pool_interim_feat,
-        clip_emb_dim=clip_emb_dim,
-        device=device
+        layer_norm=layer_norm,
+        gelu=gelu,
+        device=device,
+        action_graph_kwargs=action_graph_cfg,
+        use_pool=use_pool,
+        use_proj=use_proj
     ).to(device)
 
+    class_weights = None
+    if config["training"]["loss"]["ifw"]:
+        class_weights = compute_class_weights(train_dataset, activity_to_idx)
+    loss_func = build_loss_fn(config["training"]["loss"], class_weights)
+        
     if optimizer_name == 'adam':
         opt = torch.optim.Adam(
             params=model.parameters(),
@@ -124,6 +166,7 @@ if __name__ == "__main__":
 
     save_path = os.path.join(
         config["output"]["base_path"],
+        config["experiment_name"],
         f"dino_model_fc_layer_{fc_layers_num}_num_epoch_{num_epochs}_graph_emb_dim_{graph_emb_dim}_final_graph_emb_dim_{final_graph_emb_dim}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
     os.makedirs(save_path, exist_ok=True)
@@ -164,6 +207,7 @@ if __name__ == "__main__":
             global_step=global_step,
             num_classes_train=len(cls_mapping),
             num_classes_val=len(validation_dataset.activity_to_idx),
+            loss_func=loss_func
         )
         
         val_metrics = epoch_result["val"]["eval_metrics"]
