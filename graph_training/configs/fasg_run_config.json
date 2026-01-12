@@ -27,7 +27,7 @@
     },
     "attention_pooler" : {
       "graph_pool_interim_feat" : 128,
-      "final_graph_emb_dim" : 64
+      "final_graph_emb_dim" : 128
     }
   },
   "data": {

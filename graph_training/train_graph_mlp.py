@@ -142,6 +142,7 @@ if __name__ == "__main__":
     class_weights = None
     if config["training"]["loss"]["ifw"]:
         class_weights = compute_class_weights(train_dataset, activity_to_idx)
+        print(class_weights)
     loss_func = build_loss_fn(config["training"]["loss"], class_weights)
         
     if optimizer_name == 'adam':

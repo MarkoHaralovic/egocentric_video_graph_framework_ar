@@ -196,6 +196,7 @@ class GraphMLP(nn.Module):
          device=device,
          **action_graph_kwargs,
       )
+      
       self.input_dim = self.action_graph_embedder.out_dim 
       self.fc_layers_num = fc_layers_num
       self.n_classes =  n_classes
