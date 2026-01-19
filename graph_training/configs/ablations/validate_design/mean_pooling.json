@@ -1,10 +1,10 @@
 {
-  "experiment_name": "no_pooling_no_projection",
+  "experiment_name": "mean_pooling",
   "mlp" : {
     "fc_layers_num": 2,
     "num_graphs" : 10,
     "use_pool" : false,
-    "use_proj" : false,
+    "use_proj" : true,
     "action_graph_embedder" : {
       "emb_dim" : 32,
       "obj_out" : 32,

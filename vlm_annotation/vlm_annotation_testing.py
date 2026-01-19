@@ -1,20 +1,18 @@
 import os
-import sys
-import numpy as np
-import cv2
-from PIL import Image
-import torch
-import pandas as pd
-import tqdm
-import re
 import random
+import re
+import sys
+
+import cv2
+import numpy as np
+import pandas as pd
+import torch
+import tqdm
+from PIL import Image
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vlm_annotation_pipeline import (
-   load_llava_model,
-   parse_llava_output,
-)
+from vlm_annotation_pipeline import load_llava_model, parse_llava_output
 
 testing_folder = "/home/s3758869/vlm_datasets/AriaEA_vlm_ann_3_10_llava-v1.6-34b-hf/loc1_script1_seq1_rec1"
 frames_path = os.path.join(testing_folder, "frames")
@@ -28,11 +26,12 @@ N_FRAMES_FOR_ACTIVITY = 10
 
 
 def shorten_action(action_sentence):
-   s = action_sentence.strip()
-   return re.sub("The camera wearer is", "", s)
+    s = action_sentence.strip()
+    return re.sub("The camera wearer is", "", s)
+
 
 def prompt_1(actions, start, end):
-   return f"""
+    return f"""
          You are given {end - start} egocentric images that belong to one short time span. 
          They are ordered in time from earliest to latest.
 
@@ -65,7 +64,7 @@ def prompt_1(actions, start, end):
 
 
 def prompt_2(actions, start, end):
-   return f"""
+    return f"""
       You are given {end - start} egocentric images that belong to one short time span.
       They are ordered in time from earliest to latest.
 
@@ -104,9 +103,10 @@ def prompt_2(actions, start, end):
          - Return ONLY the activity label token. 
          - Do NOT add explanations, sentences, or quotes.
       """
-   
+
+
 def prompt_3(actions, gazes_textual, start, end):
-   return f"""
+    return f"""
    "text": (
          "You are an expert in gaze-based event causal understanding within ego-centric video environments. "
          "You are given {end - start} egocentric images that belong to one short time span.They are ordered in time from earliest to latest."
@@ -134,9 +134,10 @@ def prompt_3(actions, gazes_textual, start, end):
          "Gazes are: {gazes_textual}"
       )
    """
-   
+
+
 def prompt_4(actions, start, end):
-   return f"""
+    return f"""
    "text": (
          "You are an expert in gaze-based event causal understanding within ego-centric video environments. "
          "You are given {end - start} egocentric images that belong to one short time span.They are ordered in time from earliest to latest."
@@ -163,9 +164,10 @@ def prompt_4(actions, start, end):
          - Do NOT add explanations, sentences, or quotes."
       )
    """
-   
+
+
 def prompt_5(actions, start, end):
-   return f"""
+    return f"""
    "text": "
       You are given {end - start} egocentric images that belong to one short time span. 
       They are ordered in time from earliest to latest.
@@ -197,6 +199,7 @@ def prompt_5(actions, start, end):
       
       "
    """
+
 
 def prompt_6(actions, start, end):
     return f"""
@@ -236,7 +239,8 @@ def prompt_6(actions, start, end):
     Important:
     - Return ONLY the label, nothing else.
     """
-    
+
+
 def prompt_7(actions, start, end):
     return f"""
       You are given several egocentric images that belong to one short time span. 
@@ -268,8 +272,8 @@ def prompt_7(actions, start, end):
       
       Previous actions based on single frame were : {actions}
       """
-    
-    
+
+
 def prompt_8(actions, start, end):
     return f"""
       You are analyzing egocentric video frames - images captured from a first-person perspective using META smart glasses 
@@ -311,7 +315,8 @@ def prompt_8(actions, start, end):
       - Do NOT add explanations, sentences, or quotes, only <verb>_<object>      
       Previous actions based on single frame were : {actions}
       """
-      
+
+
 def prompt_9(actions, start, end):
     return f"""
       You are analyzing egocentric video frames - images captured from a first-person perspective using META smart glasses 
@@ -349,251 +354,267 @@ def prompt_9(actions, start, end):
       - Do NOT add explanations, sentences, or quotes, only <verb>_<object>      
       Previous actions based on single frame were : {actions}
       """
-      
+
+
 def generate_gaze_description(gazes):
-   valid_gazes = [(g["gaze_x"], g["gaze_y"]) for g in gazes if g["gaze_x"] is not None and g["gaze_y"] is not None]
-   
-   gazes_x = [g[0] for g in valid_gazes]
-   gazes_y = [g[1] for g in valid_gazes]
-   
-   prompt_text  = ""
-   for i in range(len(gazes_x)):
-      prompt_text+=f"Frame {i+1}: Gaze({gazes_x[i]}, {gazes_y[i]})"
-   return prompt_text
+    valid_gazes = [
+        (g["gaze_x"], g["gaze_y"])
+        for g in gazes
+        if g["gaze_x"] is not None and g["gaze_y"] is not None
+    ]
+
+    gazes_x = [g[0] for g in valid_gazes]
+    gazes_y = [g[1] for g in valid_gazes]
+
+    prompt_text = ""
+    for i in range(len(gazes_x)):
+        prompt_text += f"Frame {i+1}: Gaze({gazes_x[i]}, {gazes_y[i]})"
+    return prompt_text
 
 
 def generate_saliency_map(gazes, h, w, sigma=15):
-   saliency = np.zeros((h, w), dtype=np.float32)
-   
-   for g in gazes:
-      saliency[int(g["gaze_y"]), int(g["gaze_x"])] += 1.0
-   
-   saliency = cv2.GaussianBlur(saliency, (0, 0), sigma)
-   saliency = saliency / saliency.max()
-   saliency = (saliency * 255).astype(np.uint8)
+    saliency = np.zeros((h, w), dtype=np.float32)
 
-   saliency_colored = cv2.applyColorMap(saliency, cv2.COLORMAP_JET)
-   return saliency_colored
+    for g in gazes:
+        saliency[int(g["gaze_y"]), int(g["gaze_x"])] += 1.0
 
+    saliency = cv2.GaussianBlur(saliency, (0, 0), sigma)
+    saliency = saliency / saliency.max()
+    saliency = (saliency * 255).astype(np.uint8)
 
-def run_activity_recognition(model, processor, images, prompt_text, image_size=IMAGE_SIZE_VLM_INPUT):
-   torch.cuda.empty_cache()
-   
-   pil_images = [Image.fromarray(img) for img in images]
-   for img in pil_images:
-      img.thumbnail((image_size, image_size), Image.Resampling.LANCZOS)
-   
-   content = []
-   for _ in pil_images:
-      content.append({"type": "image"})
-   
-   content.append({
-      "type": "text",
-      "text": prompt_text
-   })
-   
-   conversation = [
-      {
-         "role": "user",
-         "content": content
-      },
-   ]
-   
-   prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-   inputs = processor(images=pil_images, text=prompt, return_tensors="pt").to(model.device)
-   
-   with torch.inference_mode():
-      output = model.generate(
-         **inputs,
-         max_new_tokens=50,
-         do_sample=False,
-         use_cache=False
-      )
-      result = processor.decode(output[0], skip_special_tokens=True).strip()
-   
-   del inputs, output, pil_images, content, conversation
-   torch.cuda.empty_cache()
-   
-   return result
+    saliency_colored = cv2.applyColorMap(saliency, cv2.COLORMAP_JET)
+    return saliency_colored
 
 
-def test_prompts(model, processor, input_folder, output_folder, N_frames_for_activity=N_FRAMES_FOR_ACTIVITY, image_size=IMAGE_SIZE_VLM_INPUT):
-   frames_folder = os.path.join(input_folder, "frames")
-   frame_files = sorted([f for f in os.listdir(frames_folder) if f.endswith(".jpg")])
-   
-   with open(os.path.join(input_folder, "actions.txt"), "r") as f:
-      actions_list = [line.strip() for line in f.readlines()]
-   
-   with open(os.path.join(input_folder, "activities.txt"), "r") as f:
-      activities_list = [line.strip() for line in f.readlines()]
-   
-   annotations = pd.read_csv(os.path.join(input_folder, "annotations.csv"))
-   
-   os.makedirs(output_folder, exist_ok=True)
-   
-   T = len(frame_files)
-   max_activities = (T + N_frames_for_activity - 1) // N_frames_for_activity
-   
-   # results = {
-   #    "prompt_1": [],
-   #    "prompt_2": [],
-   #    "prompt_3": [],
-   #    "prompt_4": [],
-   #    "prompt_5": [],
-   #    "prompt_6": []
-   # }
-   
-   results = {
-      "prompt_6": [],
-      "prompt_7": [],
-      "prompt_8": [],
-      "prompt_9": []
-   }
-   for i in tqdm.tqdm(range(max_activities), desc="Testing prompts on activity blocks"):
-      start = i * N_frames_for_activity
-      end = min(start + N_frames_for_activity, T)
-      
-      images = []
-      for idx in range(start, end):
-         img_path = os.path.join(frames_folder, frame_files[idx])
-         img = cv2.imread(img_path)
-         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-         images.append(img)
-      images = random.sample(images, min(3,len(images)))
-      
-      actions_block = actions_list[start:end]
-      actions_str = "\n".join([f"{shorten_action(act)}" for j, act in enumerate(actions_block)])
-      
-      gazes_block = []
-      for idx in range(start, end):
-         row = annotations.iloc[idx]
-         gazes_block.append({"gaze_x": row["gaze_x"], "gaze_y": row["gaze_y"]})
-      
-      gaze_text = generate_gaze_description(gazes_block)
-      
-      # try:
-      #    prompt_text = prompt_1(actions_str, start, end-1)
-      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-      #    parsed = parse_llava_output(result)
-      #    results["prompt_1"].append(parsed)
-      #    print(f"Prompt 1 result: {parsed}")
-      # except Exception as e:
-      #    results["prompt_1"].append(f"ERROR: {str(e)}")
-      #    print(f"Prompt 1 ERROR: {e}")
-      
-      # try:
-      #    prompt_text = prompt_2(actions_str, start, end-1)
-      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-      #    parsed = parse_llava_output(result)
-      #    results["prompt_2"].append(parsed)
-      #    print(f"Prompt 2 result: {parsed}")
-      # except Exception as e:
-      #    results["prompt_2"].append(f"ERROR: {str(e)}")
-      #    print(f"Prompt 2 ERROR: {e}")
-      
-      # try:
-      #    prompt_text = prompt_3(actions_str, gaze_text, start, end-1)
-      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-      #    parsed = parse_llava_output(result)
-      #    results["prompt_3"].append(parsed)
-      #    print(f"Prompt 3 result: {parsed}")
-      # except Exception as e:
-      #    results["prompt_3"].append(f"ERROR: {str(e)}")
-      #    print(f"Prompt 3 ERROR: {e}")
-      
-      # try:
-      #    h, w = images[0].shape[:2]
-      #    saliency_map = generate_saliency_map(gazes_block, h, w)
-      #    images_with_saliency = images + [saliency_map]
-         
-      #    prompt_text = prompt_4(actions_str, start, end-1)
-      #    result = run_activity_recognition(model, processor, images_with_saliency, prompt_text, image_size)
-      #    parsed = parse_llava_output(result)
-      #    results["prompt_4"].append(parsed)
-      #    print(f"Prompt 4 result: {parsed}")
-      # except Exception as e:
-      #    results["prompt_4"].append(f"ERROR: {str(e)}")
-      #    print(f"Prompt 4 ERROR: {e}")
-         
-      # try:
-      #    prompt_text = prompt_5(actions_str, start, end-1)
-      #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-      #    parsed = parse_llava_output(result)
-      #    results["prompt_5"].append(parsed)
-      #    print(f"Prompt 5 result: {parsed}")
-      # except Exception as e:
-      #    results["prompt_5"].append(f"ERROR: {str(e)}")
-      #    print(f"Prompt 5 ERROR: {e}")
-      
-      try:
-         prompt_text = prompt_6(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_6"].append(parsed)
-         print(f"Prompt 6 result: {parsed}")
-      except Exception as e:
-         results["prompt_6"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 6 ERROR: {e}")
-      
-      try:
-         prompt_text = prompt_7(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_7"].append(parsed)
-         print(f"Prompt 7 result: {parsed}")
-      except Exception as e:
-         results["prompt_7"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 7 ERROR: {e}")
-      
-      try:
-         prompt_text = prompt_8(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_8"].append(parsed)
-         print(f"Prompt 8 result: {parsed}")
-      except Exception as e:
-         results["prompt_8"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 8 ERROR: {e}")
-      
-      try:
-         prompt_text = prompt_9(actions_str, start, end-1)
-         result = run_activity_recognition(model, processor, images, prompt_text, image_size)
-         parsed = parse_llava_output(result)
-         results["prompt_9"].append(parsed)
-         print(f"Prompt 9 result: {parsed}")
-      except Exception as e:
-         results["prompt_9"].append(f"ERROR: {str(e)}")
-         print(f"Prompt 9 ERROR: {e}")
-   
-   results_df = pd.DataFrame({
-      "block_id": list(range(max_activities)),
-      "ground_truth": activities_list[:max_activities],
-      # "prompt_1": results["prompt_1"],
-      # "prompt_2": results["prompt_2"],
-      # "prompt_3": results["prompt_3"],
-      # "prompt_4": results["prompt_4"],
-      # "prompt_5": results["prompt_5"],
-      "prompt_6": results["prompt_6"],
-      "prompt_7": results["prompt_7"],
-      "prompt_8": results["prompt_8"],
-      "prompt_9": results["prompt_9"]
-   })
-   
-   results_df.to_csv(os.path.join(output_folder, "prompt_comparison.csv"), index=False)
-   
-   return results_df
+def run_activity_recognition(
+    model, processor, images, prompt_text, image_size=IMAGE_SIZE_VLM_INPUT
+):
+    torch.cuda.empty_cache()
+
+    pil_images = [Image.fromarray(img) for img in images]
+    for img in pil_images:
+        img.thumbnail((image_size, image_size), Image.Resampling.LANCZOS)
+
+    content = []
+    for _ in pil_images:
+        content.append({"type": "image"})
+
+    content.append({"type": "text", "text": prompt_text})
+
+    conversation = [
+        {"role": "user", "content": content},
+    ]
+
+    prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+    inputs = processor(images=pil_images, text=prompt, return_tensors="pt").to(
+        model.device
+    )
+
+    with torch.inference_mode():
+        output = model.generate(
+            **inputs, max_new_tokens=50, do_sample=False, use_cache=False
+        )
+        result = processor.decode(output[0], skip_special_tokens=True).strip()
+
+    del inputs, output, pil_images, content, conversation
+    torch.cuda.empty_cache()
+
+    return result
+
+
+def test_prompts(
+    model,
+    processor,
+    input_folder,
+    output_folder,
+    N_frames_for_activity=N_FRAMES_FOR_ACTIVITY,
+    image_size=IMAGE_SIZE_VLM_INPUT,
+):
+    frames_folder = os.path.join(input_folder, "frames")
+    frame_files = sorted([f for f in os.listdir(frames_folder) if f.endswith(".jpg")])
+
+    with open(os.path.join(input_folder, "actions.txt"), "r") as f:
+        actions_list = [line.strip() for line in f.readlines()]
+
+    with open(os.path.join(input_folder, "activities.txt"), "r") as f:
+        activities_list = [line.strip() for line in f.readlines()]
+
+    annotations = pd.read_csv(os.path.join(input_folder, "annotations.csv"))
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    T = len(frame_files)
+    max_activities = (T + N_frames_for_activity - 1) // N_frames_for_activity
+
+    # results = {
+    #    "prompt_1": [],
+    #    "prompt_2": [],
+    #    "prompt_3": [],
+    #    "prompt_4": [],
+    #    "prompt_5": [],
+    #    "prompt_6": []
+    # }
+
+    results = {"prompt_6": [], "prompt_7": [], "prompt_8": [], "prompt_9": []}
+    for i in tqdm.tqdm(
+        range(max_activities), desc="Testing prompts on activity blocks"
+    ):
+        start = i * N_frames_for_activity
+        end = min(start + N_frames_for_activity, T)
+
+        images = []
+        for idx in range(start, end):
+            img_path = os.path.join(frames_folder, frame_files[idx])
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            images.append(img)
+        images = random.sample(images, min(3, len(images)))
+
+        actions_block = actions_list[start:end]
+        actions_str = "\n".join(
+            [f"{shorten_action(act)}" for j, act in enumerate(actions_block)]
+        )
+
+        gazes_block = []
+        for idx in range(start, end):
+            row = annotations.iloc[idx]
+            gazes_block.append({"gaze_x": row["gaze_x"], "gaze_y": row["gaze_y"]})
+
+        gaze_text = generate_gaze_description(gazes_block)
+
+        # try:
+        #    prompt_text = prompt_1(actions_str, start, end-1)
+        #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+        #    parsed = parse_llava_output(result)
+        #    results["prompt_1"].append(parsed)
+        #    print(f"Prompt 1 result: {parsed}")
+        # except Exception as e:
+        #    results["prompt_1"].append(f"ERROR: {str(e)}")
+        #    print(f"Prompt 1 ERROR: {e}")
+
+        # try:
+        #    prompt_text = prompt_2(actions_str, start, end-1)
+        #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+        #    parsed = parse_llava_output(result)
+        #    results["prompt_2"].append(parsed)
+        #    print(f"Prompt 2 result: {parsed}")
+        # except Exception as e:
+        #    results["prompt_2"].append(f"ERROR: {str(e)}")
+        #    print(f"Prompt 2 ERROR: {e}")
+
+        # try:
+        #    prompt_text = prompt_3(actions_str, gaze_text, start, end-1)
+        #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+        #    parsed = parse_llava_output(result)
+        #    results["prompt_3"].append(parsed)
+        #    print(f"Prompt 3 result: {parsed}")
+        # except Exception as e:
+        #    results["prompt_3"].append(f"ERROR: {str(e)}")
+        #    print(f"Prompt 3 ERROR: {e}")
+
+        # try:
+        #    h, w = images[0].shape[:2]
+        #    saliency_map = generate_saliency_map(gazes_block, h, w)
+        #    images_with_saliency = images + [saliency_map]
+
+        #    prompt_text = prompt_4(actions_str, start, end-1)
+        #    result = run_activity_recognition(model, processor, images_with_saliency, prompt_text, image_size)
+        #    parsed = parse_llava_output(result)
+        #    results["prompt_4"].append(parsed)
+        #    print(f"Prompt 4 result: {parsed}")
+        # except Exception as e:
+        #    results["prompt_4"].append(f"ERROR: {str(e)}")
+        #    print(f"Prompt 4 ERROR: {e}")
+
+        # try:
+        #    prompt_text = prompt_5(actions_str, start, end-1)
+        #    result = run_activity_recognition(model, processor, images, prompt_text, image_size)
+        #    parsed = parse_llava_output(result)
+        #    results["prompt_5"].append(parsed)
+        #    print(f"Prompt 5 result: {parsed}")
+        # except Exception as e:
+        #    results["prompt_5"].append(f"ERROR: {str(e)}")
+        #    print(f"Prompt 5 ERROR: {e}")
+
+        try:
+            prompt_text = prompt_6(actions_str, start, end - 1)
+            result = run_activity_recognition(
+                model, processor, images, prompt_text, image_size
+            )
+            parsed = parse_llava_output(result)
+            results["prompt_6"].append(parsed)
+            print(f"Prompt 6 result: {parsed}")
+        except Exception as e:
+            results["prompt_6"].append(f"ERROR: {str(e)}")
+            print(f"Prompt 6 ERROR: {e}")
+
+        try:
+            prompt_text = prompt_7(actions_str, start, end - 1)
+            result = run_activity_recognition(
+                model, processor, images, prompt_text, image_size
+            )
+            parsed = parse_llava_output(result)
+            results["prompt_7"].append(parsed)
+            print(f"Prompt 7 result: {parsed}")
+        except Exception as e:
+            results["prompt_7"].append(f"ERROR: {str(e)}")
+            print(f"Prompt 7 ERROR: {e}")
+
+        try:
+            prompt_text = prompt_8(actions_str, start, end - 1)
+            result = run_activity_recognition(
+                model, processor, images, prompt_text, image_size
+            )
+            parsed = parse_llava_output(result)
+            results["prompt_8"].append(parsed)
+            print(f"Prompt 8 result: {parsed}")
+        except Exception as e:
+            results["prompt_8"].append(f"ERROR: {str(e)}")
+            print(f"Prompt 8 ERROR: {e}")
+
+        try:
+            prompt_text = prompt_9(actions_str, start, end - 1)
+            result = run_activity_recognition(
+                model, processor, images, prompt_text, image_size
+            )
+            parsed = parse_llava_output(result)
+            results["prompt_9"].append(parsed)
+            print(f"Prompt 9 result: {parsed}")
+        except Exception as e:
+            results["prompt_9"].append(f"ERROR: {str(e)}")
+            print(f"Prompt 9 ERROR: {e}")
+
+    results_df = pd.DataFrame(
+        {
+            "block_id": list(range(max_activities)),
+            "ground_truth": activities_list[:max_activities],
+            # "prompt_1": results["prompt_1"],
+            # "prompt_2": results["prompt_2"],
+            # "prompt_3": results["prompt_3"],
+            # "prompt_4": results["prompt_4"],
+            # "prompt_5": results["prompt_5"],
+            "prompt_6": results["prompt_6"],
+            "prompt_7": results["prompt_7"],
+            "prompt_8": results["prompt_8"],
+            "prompt_9": results["prompt_9"],
+        }
+    )
+
+    results_df.to_csv(os.path.join(output_folder, "prompt_comparison.csv"), index=False)
+
+    return results_df
 
 
 def main():
-   device = "cuda:0" if torch.cuda.is_available() else "cpu"
-   model, processor = load_llava_model(VLM_ANNOTATOR, device)
-   print(f"Model loaded on {model.device}")
-   
-   output_folder = os.path.join(testing_folder, "testing_prompts")
-   results = test_prompts(model, processor, testing_folder, output_folder)
-   
-   print(results.to_string())
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    model, processor = load_llava_model(VLM_ANNOTATOR, device)
+    print(f"Model loaded on {model.device}")
+
+    output_folder = os.path.join(testing_folder, "testing_prompts")
+    results = test_prompts(model, processor, testing_folder, output_folder)
+
+    print(results.to_string())
 
 
 if __name__ == "__main__":
-   main()
+    main()

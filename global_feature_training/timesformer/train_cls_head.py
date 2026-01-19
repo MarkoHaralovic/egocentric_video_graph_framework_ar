@@ -1,25 +1,30 @@
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'TimeSformer'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-import torch
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "TimeSformer"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 import json
-from tqdm import tqdm
+from datetime import datetime
+
+import torch
 from torch.utils.data import DataLoader
- 
+from tqdm import tqdm
+
 from global_feature_training.base_model.sequence_model import ImageSequenceClassificator
-from global_feature_training.timesformer.timesformer_feature_extraction import (
-    get_timesformer_visual_backbone,
-    get_clip_text_encoder
-)
-from global_feature_training.data_loading.sequence_dataset import SequenceDataset, feature_collate_fn
 from global_feature_training.data_loading.dataset_split import return_train_val_samples
-from global_feature_training.train.train import do_epoch
+from global_feature_training.data_loading.sequence_dataset import (
+    SequenceDataset,
+    feature_collate_fn,
+)
+from global_feature_training.timesformer.timesformer_feature_extraction import (
+    get_clip_text_encoder,
+    get_timesformer_visual_backbone,
+)
 from global_feature_training.train.evaluate import store_model
-import datetime
+from global_feature_training.train.train import do_epoch
 
 config_path = "/home/s3758869/egocentric_video_graph_framework_ar/global_feature_training/timesformer/configs/run_config.json"
-with open(config_path, 'r') as f:
+with open(config_path, "r") as f:
     config = json.load(f)
 
 experiment_name = config["experiment_name"]
@@ -48,16 +53,16 @@ use_text_features = config["model"]["use_text_features"]
 # with open(data_split_path,'r') as f:
 #    data_split = json.load(f)
 
-pooling =None
+pooling = None
 model_name = "timesformer_k600_8fr_224"
 num_frames = 8
 
 train_samples, val_samples, activity_to_idx = return_train_val_samples(
-   model_name=model_name, 
-   num_frames = num_frames,
-   pooling=pooling, 
-   noun_replacement="other",
-   skip_na=True,
+    model_name=model_name,
+    num_frames=num_frames,
+    pooling=pooling,
+    noun_replacement="other",
+    skip_na=True,
 )
 
 print(f"activity_to_idx : {activity_to_idx}")
@@ -66,27 +71,27 @@ print(f"len(val_samples) : {len(val_samples)}")
 
 
 train_dataset = SequenceDataset(
-    input_folder = TIMESFORMER_PRECOMUPTED_FEATS_FOLDER,
-    clip_names = None, #data_split["split_summary"]["train"],
-    samples= train_samples,
-    model_name = timesformer_model_name,
-    pooling = pooling,
-    frames = num_frames,
-    load_visual=True,
-    load_text=False,
-    activity_to_idx = activity_to_idx
-)
-
-validation_dataset = SequenceDataset(
-    input_folder = TIMESFORMER_PRECOMUPTED_FEATS_FOLDER,
-    clip_names = None, #data_split["split_summary"]["validation"],
-    samples = val_samples,
-    model_name = timesformer_model_name,
-    pooling = pooling,
+    input_folder=TIMESFORMER_PRECOMUPTED_FEATS_FOLDER,
+    clip_names=None,  # data_split["split_summary"]["train"],
+    samples=train_samples,
+    model_name=timesformer_model_name,
+    pooling=pooling,
     frames=num_frames,
     load_visual=True,
     load_text=False,
-    activity_to_idx = activity_to_idx
+    activity_to_idx=activity_to_idx,
+)
+
+validation_dataset = SequenceDataset(
+    input_folder=TIMESFORMER_PRECOMUPTED_FEATS_FOLDER,
+    clip_names=None,  # data_split["split_summary"]["validation"],
+    samples=val_samples,
+    model_name=timesformer_model_name,
+    pooling=pooling,
+    frames=num_frames,
+    load_visual=True,
+    load_text=False,
+    activity_to_idx=activity_to_idx,
 )
 
 assert train_dataset.activity_to_idx == validation_dataset.activity_to_idx
@@ -98,7 +103,7 @@ train_loader = DataLoader(
     shuffle=True,
     num_workers=num_workers,
     pin_memory=True,
-    collate_fn=feature_collate_fn
+    collate_fn=feature_collate_fn,
 )
 
 val_loader = DataLoader(
@@ -107,7 +112,7 @@ val_loader = DataLoader(
     shuffle=False,
     num_workers=num_workers,
     pin_memory=True,
-    collate_fn=feature_collate_fn
+    collate_fn=feature_collate_fn,
 )
 
 
@@ -116,8 +121,8 @@ if not USE_PRECOMPUTED_FEATURES:
         img_size=224,
         num_classes=600,
         num_frames=num_frames,
-        attention_type='divided_space_time',
-        pretrained_model=timesformer_model_path
+        attention_type="divided_space_time",
+        pretrained_model=timesformer_model_path,
     )
     tokenizer, text_backbone, _ = get_clip_text_encoder(clip_model_path, clip_cache_dir)
 else:
@@ -132,19 +137,23 @@ model = ImageSequenceClassificator(
     text_backbone=text_backbone,
     n_classes=len(cls_mapping),
     linear_layer_input_dim=linear_layer_input_dim,
+    pooling=None,
     fc_layers_num=fc_layers_num,
     use_precomputed_features=USE_PRECOMPUTED_FEATURES,
     transforms=None,
-    device=device
+    device=device,
 ).to(device)
 
-if optimizer_name == 'adam':
+model.train()
+trainable_params = model.get_trainable_params()
+
+if optimizer_name == "adam":
     opt = torch.optim.Adam(
         params=model.parameters(),
         lr=learning_rate,
         weight_decay=weight_decay,
     )
-elif optimizer_name == 'sgd':
+elif optimizer_name == "sgd":
     opt = torch.optim.SGD(
         params=model.parameters(),
         lr=learning_rate,
@@ -160,7 +169,7 @@ if scheduler_factor != 1.0:
 
 save_path = os.path.join(
     config["output"]["base_path"],
-    f"timesformer_fc_layer_{fc_layers_num}_num_epoch_{num_epochs}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
+    f"timesformer_fc_layer_{fc_layers_num}_num_epoch_{num_epochs}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
 )
 os.makedirs(save_path, exist_ok=True)
 
@@ -182,7 +191,7 @@ experiment_config = {
     "use_precomputed_features": USE_PRECOMPUTED_FEATURES,
     "use_text_features": use_text_features,
     "device": device,
-    "linear_layer_input_dim": linear_layer_input_dim
+    "linear_layer_input_dim": linear_layer_input_dim,
 }
 
 with open(os.path.join(save_path, "experiment_config.json"), "w") as f:
@@ -190,10 +199,15 @@ with open(os.path.join(save_path, "experiment_config.json"), "w") as f:
 
 with open(os.path.join(save_path, "class_mapping.json"), "w") as f:
     json.dump(cls_mapping, f, indent=2)
-            
-for epoch in tqdm(range(num_epochs), desc=f"Training for {num_epochs} epochs", unit="epoch", total=num_epochs):
+
+for epoch in tqdm(
+    range(num_epochs),
+    desc=f"Training for {num_epochs} epochs",
+    unit="epoch",
+    total=num_epochs,
+):
     print(f"Epoch {epoch+1}/{num_epochs}\n")
-    
+
     epoch_result, global_step = do_epoch(
         device=device,
         net=model,
@@ -203,51 +217,45 @@ for epoch in tqdm(range(num_epochs), desc=f"Training for {num_epochs} epochs", u
         global_step=global_step,
         num_classes_train=len(cls_mapping),
         num_classes_val=len(validation_dataset.activity_to_idx),
-        text_features=use_text_features
+        text_features=use_text_features,
     )
-    
+
     val_metrics = epoch_result["val"]["eval_metrics"]
     train_metrics = epoch_result["train"]["eval_metrics"]
-    
-    print(f"\nValidation - Accuracy: {val_metrics['acc']*100:.2f}%, F1: {val_metrics['f1']*100:.2f}%")
-    
+
+    print(
+        f"\nValidation - Accuracy: {val_metrics['acc']*100:.2f}%, F1: {val_metrics['f1']*100:.2f}%"
+    )
+
     if val_metrics["acc"] > best_epoch_result["acc"]:
         best_epoch_result["acc"] = val_metrics["acc"]
-        store_model(
-            net=model,
-            opt=opt,
-            epoch=epoch,
-            save_path=save_path,
-            metric="acc"
-        )
+        store_model(net=model, opt=opt, epoch=epoch, save_path=save_path, metric="acc")
         print(f"New best accuracy model saved: {val_metrics['acc']*100:.2f}%")
-        
+
     if val_metrics["f1"] > best_epoch_result["f1"]:
         best_epoch_result["f1"] = val_metrics["f1"]
-        store_model(
-            net=model,
-            opt=opt,
-            epoch=epoch,
-            save_path=save_path,
-            metric="f1"
-        )
+        store_model(net=model, opt=opt, epoch=epoch, save_path=save_path, metric="f1")
         print(f"New best F1 model saved: {val_metrics['f1']*100:.2f}%")
-    
+
     results[epoch] = epoch_result
-    
+
     if scheduler is not None:
         scheduler.step()
-    
+
     print(f"Epoch {epoch+1} completed")
 
 with open(os.path.join(save_path, "training_results.json"), "w") as f:
     json_results = {}
     for ep, res in results.items():
         json_results[str(ep)] = {
-            "train": {"acc": float(res["train"]["eval_metrics"]["acc"]), 
-                     "f1": float(res["train"]["eval_metrics"]["f1"])},
-            "val": {"acc": float(res["val"]["eval_metrics"]["acc"]), 
-                   "f1": float(res["val"]["eval_metrics"]["f1"])}
+            "train": {
+                "acc": float(res["train"]["eval_metrics"]["acc"]),
+                "f1": float(res["train"]["eval_metrics"]["f1"]),
+            },
+            "val": {
+                "acc": float(res["val"]["eval_metrics"]["acc"]),
+                "f1": float(res["val"]["eval_metrics"]["f1"]),
+            },
         }
     json.dump(json_results, f, indent=2)
 

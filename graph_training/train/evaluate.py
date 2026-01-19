@@ -1,59 +1,63 @@
 import os
+
 import numpy as np
-from sklearn import metrics
 import torch
 import torch.nn.functional as F
+from sklearn import metrics
+
 
 def evaluate(net, data_loader, device, num_classes):
     net.eval()
-    
+
     all_preds = []
     all_targets = []
-    
+
     with torch.no_grad():
         for _, data_dict in enumerate(data_loader):
             targets = data_dict["activity_label"].to(device)
             graphs = data_dict["full_action_graphs"]
-                    
+
             output = net(graphs)
 
             logits = output.data
             pred = logits.max(1)[1]
-            
+
             all_preds.extend(pred.cpu().numpy())
             all_targets.extend(targets.cpu().numpy())
-    
+
     y_pred_np = np.array(all_preds)
     y_true_np = np.array(all_targets)
 
     eval_metrics, conf_mat = evaluation_metrics(y_pred_np, y_true_np, num_classes)
-    
+
     epoch_result = {}
     epoch_result["eval_metrics"] = eval_metrics
     epoch_result["conf_mat"] = conf_mat
-    
-    return epoch_result
+
+    return epoch_result, y_pred_np, y_true_np
+
 
 def evaluation_metrics(y_pred, y_true, num_classes):
 
-   confusion_matrix = metrics.confusion_matrix(y_true=y_true, y_pred=y_pred, labels=tuple(range(num_classes)))
+    confusion_matrix = metrics.confusion_matrix(
+        y_true=y_true, y_pred=y_pred, labels=tuple(range(num_classes))
+    )
 
-   results = {
-      'acc': metrics.accuracy_score(y_true=y_true, y_pred=y_pred),
-      'f1': metrics.f1_score(y_true=y_true, y_pred=y_pred,average="macro"),
-   }
+    results = {
+        "acc": metrics.accuracy_score(y_true=y_true, y_pred=y_pred),
+        "f1": metrics.f1_score(y_true=y_true, y_pred=y_pred, average="macro"),
+    }
 
-   return results, confusion_matrix
+    return results, confusion_matrix
 
-def store_model(
-    net, opt, epoch, save_path, metric="f1"
-):
+
+def store_model(net, opt, epoch, save_path, metric="f1"):
     for f in os.listdir(save_path):
         if f.startswith(f"best_train_model_{metric}_") and f.endswith(".pt"):
             os.remove(os.path.join(save_path, f))
         if f.startswith(f"best_model_{metric}_") and f.endswith(".pt"):
             os.remove(os.path.join(save_path, f))
-            
+
     file_name = f"best_model_{metric}_epoch_{epoch}.pt"
     torch.save(
         {
@@ -64,7 +68,7 @@ def store_model(
         },
         os.path.join(save_path, file_name),
     )
-    
+
 
 def compute_class_weights(train_dataset, activity_to_idx):
     counts = torch.zeros(len(activity_to_idx), dtype=torch.float)
@@ -91,9 +95,13 @@ def build_loss_fn(loss_cfg, class_weights):
         alpha = class_weights.to(logits.device) if class_weights is not None else None
         alpha_factor = alpha[targets] if alpha is not None else 1.0
         focal_factor = (1.0 - pt) ** gamma
-        loss = -alpha_factor * focal_factor * logp.gather(1, targets.unsqueeze(1)).squeeze(1)
+        loss = (
+            -alpha_factor
+            * focal_factor
+            * logp.gather(1, targets.unsqueeze(1)).squeeze(1)
+        )
         return loss.mean()
-    
+
     if name == "cross_entropy":
         return ce_loss
     if name in {"focal_loss"}:

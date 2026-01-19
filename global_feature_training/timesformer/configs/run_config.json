@@ -27,5 +27,5 @@
   "output": {
     "base_path": "/home/s3758869/egocentric_video_graph_framework_ar/outputs/timesformer_global_feature_baseline"
   },
-  "device": "cuda"
+  "device": "cpu"
 }
