@@ -1,14 +1,8 @@
 from typing import Dict, List
-
 import spacy
 import torch
-
 from .base_graph import BaseGraph, Edge, Node
-
 nlp = spacy.load("en_core_web_sm")
-
-import torch
-
 
 def to_singular(word: str) -> str:
     if len(word.split(" ")) > 1:
@@ -38,15 +32,15 @@ class FullActionGraph(BaseGraph):
         clip_feat,
         obj_feats,
         rels_dict,
+        clip_embeddings,
         aux_verbs=None,
         aux_direct_objects_map=None,
         object_dim=256,
+        
     ):
         self.object_dim = object_dim
         if direct_object and direct_object not in objects_atr_map:
-            print(
-                f"direct_object '{direct_object}' not found in objects_atr_map. Available: {list(objects_atr_map.keys())}"
-            )
+            print(f"direct_object '{direct_object}' not found in objects_atr_map. Available: {list(objects_atr_map.keys())}")
             direct_object = None
 
         aux_verb_idxs = (
@@ -106,13 +100,21 @@ class FullActionGraph(BaseGraph):
         # CW node
         cw_id = node_id_counter
         node_id_counter += 1
-        cw_node = self.new_camera_wearer_node(node_id_counter)
+        cw_node = self.new_camera_wearer_node(
+            node_id=node_id_counter, 
+            text_embedding=clip_embeddings["camera_wearer"])
         self.nodes[cw_id] = cw_node
 
         # Verb node
+        verb_embedding = clip_embeddings[verb]
         verb_id = node_id_counter
         node_id_counter += 1
-        verb_node = self.new_main_verb_node(verb_id, verb, clip_feat)
+        verb_node = self.new_main_verb_node(
+            node_id=verb_id, 
+            verb=verb, 
+            clip_feat=clip_feat, 
+            text_embedding=verb_embedding
+        )
         self.nodes[verb_id] = verb_node
 
         # CW -> verb edge
@@ -122,9 +124,13 @@ class FullActionGraph(BaseGraph):
         if aux_verb_idxs:
             for aux_verb in aux_verbs:
                 aux_verb_id = node_id_counter
+                aux_verb_embedding = clip_embeddings[aux_verb]
                 node_id_counter += 1
                 aux_verb_node = self.new_aux_verb_node(
-                    aux_verb_id, aux_verb, clip_feat=None
+                    node_id=aux_verb_id, 
+                    verb=aux_verb, 
+                    clip_feat=None, 
+                    text_embedding=aux_verb_embedding
                 )
                 self.nodes[aux_verb_id] = aux_verb_node
                 aux_verb_node_map[aux_verb] = aux_verb_id
@@ -150,25 +156,31 @@ class FullActionGraph(BaseGraph):
                 attr_vecs[obj_idx, self.attrs[attr]] = 1.0
 
             if aux_direct_object_ids is None or not obj_idx in aux_direct_object_ids:
+                text = " ".join(attributes + [objects_atr_map[orig_name]["base_object"]])
+                obj_text_embedding = clip_embeddings[text]
                 obj_node = self.new_object_node(
-                    node_id,
-                    obj_idx,
-                    obj_feat,
-                    attributes,
-                    attr_vecs[obj_idx],
-                    self.verbs[verb],
+                    node_id=node_id,
+                    obj_idx=obj_idx,
+                    obj_feat=obj_feat,
+                    attr=attributes,
+                    attr_feat=attr_vecs[obj_idx],
+                    text_embedding=obj_text_embedding,
+                    verb_idx=self.verbs[verb],
                 )
             else:
                 verb_related_to = [
                     k for k, v in aux_direct_objects_map.items() if orig_name in v
                 ][0]
+                text = " ".join(attributes + [objects_atr_map[orig_name]["base_object"]])
+                obj_text_embedding = clip_embeddings[text]
                 obj_node = self.new_object_node(
-                    node_id,
-                    obj_idx,
-                    obj_feat,
-                    attributes,
-                    attr_vecs[obj_idx],
-                    self.verbs[verb_related_to],
+                    node_id=node_id,
+                    obj_idx=obj_idx,
+                    obj_feat=obj_feat,
+                    attr=attributes,
+                    attr_feat=attr_vecs[obj_idx],
+                    text_embedding=obj_text_embedding,
+                    verb_idx=self.verbs[verb_related_to],
                 )
 
             self.nodes[node_id] = obj_node
@@ -226,9 +238,17 @@ class FullActionGraph(BaseGraph):
         if len(obj_nodes) == 0:
             obj_indices = torch.zeros(0, dtype=torch.long)
             obj_feats = torch.zeros(0, self.object_dim)
+            obj_text_embs = torch.zeros(0, 1) 
         else:
             obj_indices = torch.tensor([n.idx for n in obj_nodes], dtype=torch.long)
             obj_feats = torch.stack([n.feat for n in obj_nodes], dim=0)
+            obj_text_embs = torch.stack([n.text_embedding for n in obj_nodes], dim=0)
+
+        all_nodes_sorted = [self.nodes[k] for k in sorted(self.nodes.keys())]
+        node_text_embs = torch.stack([
+            n.text_embedding if n.text_embedding is not None else torch.zeros_like(obj_text_embs[0])
+            for n in all_nodes_sorted
+        ], dim=0) if len(obj_nodes) > 0 else torch.zeros(0, 1)
 
         num_rels = len(self.rels)
         rels_vecs = torch.zeros((len(obj_nodes), num_rels), dtype=torch.float32)
@@ -282,4 +302,5 @@ class FullActionGraph(BaseGraph):
             "obj_feats": obj_feats,
             "rels_vecs": rels_vecs,
             "triplets": triplets,
+            "node_text_embs": node_text_embs,
         }

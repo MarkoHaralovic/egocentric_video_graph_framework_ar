@@ -44,6 +44,7 @@ class PrunedActionGraph(FullActionGraph):
         clip_feat,
         obj_feats,
         rels_dict,
+        clip_embeddings,
         object_dim=256,
     ):
         self.object_dim = object_dim
@@ -78,13 +79,22 @@ class PrunedActionGraph(FullActionGraph):
         # CW node
         cw_id = node_id_counter
         node_id_counter += 1
-        cw_node = self.new_camera_wearer_node(node_id_counter)
+        cw_node = self.new_camera_wearer_node(
+            node_id=node_id_counter, 
+            text_embedding=clip_embeddings["camera_wearer"]
+        )
         self.nodes[cw_id] = cw_node
 
         # Verb node
+        verb_embedding = clip_embeddings[verb]
         verb_id = node_id_counter
         node_id_counter += 1
-        verb_node = self.new_main_verb_node(verb_id, verb, clip_feat)
+        verb_node = self.new_main_verb_node(
+            node_id=verb_id, 
+            verb=verb, 
+            clip_feat=clip_feat, 
+            text_embedding=verb_embedding
+        )
         self.nodes[verb_id] = verb_node
 
         # CW -> verb edge
@@ -112,13 +122,16 @@ class PrunedActionGraph(FullActionGraph):
             for attr in attributes:
                 attr_vecs[obj_idx, self.attrs[attr]] = 1.0
 
+            text = " ".join(attributes + [objects_atr_map[orig_name]["base_object"]])
+            obj_text_embedding = clip_embeddings[text]
             obj_node = self.new_object_node(
-                node_id,
-                obj_idx,
-                obj_feat,
-                attributes,
-                attr_vecs[obj_idx],
-                self.verbs[verb],
+                node_id=node_id,
+                obj_idx=obj_idx,
+                obj_feat=obj_feat,
+                attr=attributes,
+                attr_feat=attr_vecs[obj_idx],
+                text_embedding=obj_text_embedding,
+                verb_idx=self.verbs[verb],
             )
             self.nodes[node_id] = obj_node
             obj_id_map[obj_idx] = node_id
@@ -161,13 +174,22 @@ class PrunedActionGraph(FullActionGraph):
         if len(obj_nodes) == 0:
             obj_indices = torch.zeros(0, dtype=torch.long)
             obj_feats = torch.zeros(0, self.object_dim)
+            obj_text_embs = torch.zeros(0, 1) 
         else:
             obj_indices = torch.tensor([n.idx for n in obj_nodes], dtype=torch.long)
             obj_feats = torch.stack([n.feat for n in obj_nodes], dim=0)
+            obj_text_embs = torch.stack([n.text_embedding for n in obj_nodes], dim=0)
 
+        all_nodes_sorted = [self.nodes[k] for k in sorted(self.nodes.keys())]
+        node_text_embs = torch.stack([
+            n.text_embedding if n.text_embedding is not None else torch.zeros_like(obj_text_embs[0])
+            for n in all_nodes_sorted
+        ], dim=0) if len(obj_nodes) > 0 else torch.zeros(0, 1)
+        
         num_rels = len(self.rels)
         rels_vecs = torch.zeros((len(obj_nodes), num_rels), dtype=torch.float32)
 
+        
         num_attrs = len(self.attrs)
         attr_vecs = torch.zeros((len(obj_nodes), num_attrs), dtype=torch.float32)
 
@@ -213,4 +235,5 @@ class PrunedActionGraph(FullActionGraph):
             "obj_feats": obj_feats,
             "rels_vecs": rels_vecs,
             "triplets": triplets,
+            "node_text_embs": node_text_embs,
         }

@@ -11,6 +11,7 @@ class Node:
     node_type: str  # "camera_wearer", "verb", "object", "aux_verb"
     idx: Optional[int]
     feat: Optional[torch.Tensor]  # clip_feat for verb, obj_feat for object
+    text_embedding : Optional[torch.tensor] # tes embedding of verb or base object + his attributes, None 
     attr: Optional[str]  # attribute for the given object
     attr_feat: Optional[
         torch.Tensor
@@ -46,11 +47,12 @@ class BaseGraph:
         self.special_rels = ["agent", "same_as"]
         self.all_edge_labels = self.special_rels + list(rels.keys())
 
-    def new_camera_wearer_node(self, node_id: int) -> Node:
+    def new_camera_wearer_node(self, node_id: int, text_embedding : torch.tensor = None) -> Node:
         return Node(
             node_id=node_id,
             label="camera_wearer",
             node_type="camera_wearer",
+            text_embedding=text_embedding,
             idx=None,
             feat=None,
             attr=None,
@@ -58,7 +60,7 @@ class BaseGraph:
         )
 
     def new_main_verb_node(
-        self, node_id: int, verb: str, clip_feat: torch.Tensor
+        self, node_id: int, verb: str, clip_feat: torch.Tensor,  text_embedding : torch.tensor = None
     ) -> Node:
         return Node(
             node_id=node_id,
@@ -66,19 +68,21 @@ class BaseGraph:
             node_type="verb",
             idx=self.verbs[verb],
             feat=clip_feat,  # cframe wise feature
+            text_embedding = text_embedding,
             attr=None,
             attr_feat=None,
         )
 
     def new_aux_verb_node(
-        self, node_id: int, verb: str, clip_feat: torch.Tensor
+        self, node_id: int, verb: str, clip_feat: torch.Tensor=None, text_embedding : torch.tensor = None
     ) -> Node:
         return Node(
             node_id=node_id,
             label=verb,
             node_type="aux_verb",
             idx=self.verbs[verb],
-            feat=None,
+            feat=clip_feat,
+            text_embedding=text_embedding,
             attr=None,
             attr_feat=None,
         )
@@ -90,6 +94,7 @@ class BaseGraph:
         obj_feat: torch.Tensor,
         attr: str,
         attr_feat: torch.Tensor,
+        text_embedding : torch.tensor = None,
         verb_idx: int = None,
     ) -> Node:
         return Node(
@@ -98,6 +103,7 @@ class BaseGraph:
             node_type="object",
             idx=obj_idx,
             feat=obj_feat,  # object feature
+            text_embedding=text_embedding,
             attr=attr,
             attr_feat=attr_feat,
             related_to_verb=verb_idx,
