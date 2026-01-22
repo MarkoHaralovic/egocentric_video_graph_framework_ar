@@ -80,7 +80,6 @@ clips = [
     if os.path.isdir(os.path.join(DATASET_PATH, clip))
 ]
 
-
 def return_train_val_samples(
     input_folder=DATASET_PATH,
     clips=clips,
@@ -202,7 +201,6 @@ def collect_samples(
 class GraphDataset(Dataset):
 
     def __init__(self, input_path, samples, activity_to_idx, graph_type):
-
         self.graph_type = graph_type
 
         with open(os.path.join(input_path, "verbs.json"), "r") as f:
@@ -216,6 +214,8 @@ class GraphDataset(Dataset):
 
         with open(os.path.join(input_path, "attributes.json"), "r") as f:
             self.attrs = json.load(f)
+            
+        self.clip_textual_embeddings = pickle.load(open(os.path.join(input_path, "clip_text_features.pkl"), 'rb'))
         self.input_path = input_path
 
         self.samples = samples
@@ -313,6 +313,7 @@ class GraphDataset(Dataset):
                         rels_dict=rels_dict,
                         aux_verbs=aux_verbs,
                         aux_direct_objects_map=aux_direct_objects_map,
+                        clip_embeddings=self.clip_textual_embeddings
                     )
                 elif self.graph_type == "pruned":
                     graph = graph.create_graph(
@@ -323,6 +324,7 @@ class GraphDataset(Dataset):
                         clip_feat=frame_feats[i],
                         obj_feats=obj_feats[i],
                         rels_dict=rels_dict,
+                        clip_embeddings=self.clip_textual_embeddings
                     )
                 action_scene_graphs[i] = graph
                 output["full_action_graphs"] = action_scene_graphs
@@ -330,15 +332,8 @@ class GraphDataset(Dataset):
         except Exception as e:
             print(e)
             print(f"ERROR loading sample {idx}: {type(e).__name__}: {e}")
-            print(
-                f"  clip: {self.clip_names[file_idx] if 'file_idx' in locals() else 'unknown'}"
-            )
+            print(f"  clip: {self.clip_names[file_idx] if 'file_idx' in locals() else 'unknown'}")
             print(f"  label: {label_str if 'label_str' in locals() else 'unknown'}")
-            print(f"direct_object : {direct_object}")
-            print(f"objects_atr_map : {objects_atr_map}")
-            print(f"aux_verbs : {aux_verbs}")
-            print(f"aux_direct_objects_map : {aux_direct_objects_map}")
-
             raise e
 
 

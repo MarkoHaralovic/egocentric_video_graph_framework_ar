@@ -10,51 +10,7 @@ VAL_SIZE = 0.2
 
 ignored_verbs = ["toast", "fold", "take", "put", "cut", "play"]
 ignored_nouns = [
-    "sink",
-    "washer",
-    "headphones",
-    "camera",
-    "watch",
-    "pan",
-    "tv",
-    "coffee maker",
-    "table",
-    "book",
-    "washer",
-    "sink",
-    "cupboard",
-    "pants",
-    "present",
-    "macaroni",
-    "pizza",
-    "snack",
-    "banana",
-    "toast",
-    "bag",
-    "pancake",
-    "chip",
-    "newspaper",
-    "magazine",
-    "soup",
-    "toast",
-    "treadmill",
-    "bag",
-    "kitchen",
-    "inside",
-    "house",
-    "door",
-    "floor",
-    "clothes",
-    "pan",
-    "cup",
-    "fruit",
-    "ceiling",
-    "paper",
-    "note",
-    "room",
-    "carpet",
-    "table",
-    "floor",
+    "sink","washer","headphones","camera","watch","pan","tv","coffee maker","table","book","washer","sink","cupboard","pants","present","macaroni","pizza","snack","banana","toast","bag","pancake","chip","newspaper","magazine","soup","toast","treadmill","bag","kitchen","inside","house","door","floor","clothes","pan","cup","fruit","ceiling","paper","note","room","carpet","table","floor",
 ]
 noun_replacement = "other"
 skip_labels = {"na"}
@@ -69,7 +25,6 @@ clips = [
     for clip in os.listdir(DATASET_PATH)
     if os.path.isdir(os.path.join(DATASET_PATH, clip))
 ]
-
 
 def map_or_skip_label(
     label: str,
@@ -101,7 +56,6 @@ def map_or_skip_label(
 
 def decode_label(x):
     return x.decode("utf-8") if isinstance(x, (bytes, bytearray)) else str(x)
-
 
 def collect_samples(
     input_folder,

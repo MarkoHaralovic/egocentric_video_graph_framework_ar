@@ -78,6 +78,7 @@ class ActionGraphEmbedding(nn.Module):
         clip_dim,
         clip_emb_dim,
         obj_feat_dim,
+        clip_text_emb_out_feats=64,
         emb_dim=32,
         obj_out=128,
         aux_out=32,
@@ -88,6 +89,7 @@ class ActionGraphEmbedding(nn.Module):
         k_aux=2,
         k_trip=2,
         use_triplets=True,
+        use_clip_text_emb=False,
         device="cuda",
     ):
         super().__init__()
@@ -98,6 +100,10 @@ class ActionGraphEmbedding(nn.Module):
         self.obj_emb = Embedder(num_objects, emb_dim)
         self.rel_emb = Embedder(num_rels, emb_dim)
 
+        self.use_clip_text_emb = use_clip_text_emb
+        if self.use_clip_text_emb:
+            self.clip_text_embedding_pooling = AttentionPooling(in_features=512, out_features=clip_text_emb_out_feats, hidden_features=128)
+        
         self.obj_pool = MultiQueryPooling(obj_feat_dim + emb_dim, obj_out, k=k_obj)
         if aux_out:
             self.aux_pool = MultiQueryPooling(emb_dim, aux_out, k=k_aux)
@@ -106,7 +112,7 @@ class ActionGraphEmbedding(nn.Module):
         self.attr_proj = nn.Linear(num_attrs * 2, attr_out)
         self.rel_proj = nn.Linear(num_rels * 2, rel_out)
 
-        if use_triplets:
+        if self.use_triplets:
             self.trip_mlp = nn.Sequential(
                 nn.Linear(emb_dim * 3, emb_dim),
                 nn.ReLU(),
@@ -123,7 +129,8 @@ class ActionGraphEmbedding(nn.Module):
             + k_obj * obj_out
             + attr_out
             + rel_out
-            + (k_trip * trip_out if use_triplets else 0)
+            + (k_trip * trip_out if self.use_triplets else 0)
+            + clip_text_emb_out_feats if self.use_clip_text_emb else None
         )
 
     def forward(self, g: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -155,6 +162,10 @@ class ActionGraphEmbedding(nn.Module):
             obj_tokens = torch.cat([obj_feats, obj_ids.to(obj_feats.dtype)], dim=-1)
         obj_vec = self.obj_pool(obj_tokens)
 
+        if self.use_clip_text_emb is not None:
+            text_embds = g["node_text_embs"].to(self.device)
+            text_embedding_vec = self.clip_text_embedding_pooling(text_embds)
+            
         attr_vecs = g["attr_vecs"].to(self.device)
         attr_sum = (
             attr_vecs.sum(dim=0)
@@ -197,6 +208,9 @@ class ActionGraphEmbedding(nn.Module):
             attr_emb.to(clip.dtype),
             rel_emb.to(clip.dtype),
         ]
+        
+        if self.use_clip_text_emb:
+            parts.append(text_embedding_vec.to(clip.dtype))
 
         if aux_vec is not None:
             parts.append(aux_vec.to(clip.dtype))

@@ -104,7 +104,8 @@ if __name__ == "__main__":
     validation_dataset = GraphDataset(
         data_path, val_samples, activity_to_idx, graph_type
     )
-
+    
+    
     assert train_dataset.activity_to_idx == validation_dataset.activity_to_idx
     cls_mapping = train_dataset.activity_to_idx
 
