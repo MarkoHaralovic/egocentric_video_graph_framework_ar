@@ -21,28 +21,33 @@ Model performance comparison (mean ± std across three runs):
 ## Visuals
 
 ### Figure 1: Full vs. Gaze-Pruned Action Scene Graph
+<p float="left">
+  <img src="figures/png/FullActionSceneGraph.png" width="49%" />
+  <img src="figures/png/PrunedActionSceneGraph.png" width="49%" />
+</p>
+
 - [Full action scene graph](figures/FullActionSceneGraph.pdf)
 - [Gaze-pruned action scene graph](figures/PrunedActionSceneGraph.pdf)
 
-**Figure 1:** Left: Full action scene graph constructed from a VLM caption. Right: Gaze-pruned action scene graph constructed from a VLM caption. Nodes in blue represent main and auxiliary action verbs, nodes in orange represent objects interacted with, the red node represents the camera wearer (the action taker), and relations between them are encoded via edges (e.g., direct object, prepositions, agent). Each object has 0 to N attributes describing it.
+Left: Full action scene graph constructed from a VLM caption. Right: Gaze-pruned action scene graph constructed from a VLM caption. Nodes in blue represent main and auxiliary action verbs, nodes in orange represent objects interacted with, the red node represents the camera wearer (the action taker), and relations between them are encoded via edges (e.g., direct object, prepositions, agent). Each object has 0 to N attributes describing it.
 
 ---
 
 ### Figure 2: Workflow overview
 - [Workflow overview](figures/ActivityPrediction.pdf)
 
-**Figure 2:** Workflow overview.
+Workflow overview.
 
 ---
 
 ### Figure 3: Graph Attention Encoder
 - [Graph Attention Encoder](figures/GraphAttentionEncoder.pdf)
 
-**Figure 3:** Visualization of our Graph Attention Module, consisting of a graph embedder, linear projection into a lower-dimensional space, and attention pooling over the temporal dimension.
+Visualization of our Graph Attention Module, consisting of a graph embedder, linear projection into a lower-dimensional space, and attention pooling over the temporal dimension.
 
 ---
 
 ### Figure 4: Graph batch representation
 - [Graph batch representation](figures/GraphBatch.pdf)
 
-**Figure 4:** Graph batch representation. Each batch consists of \(N\) consecutive frames. Each frame is action-annotated and a graph is constructed based on that action caption. Objects are grounded using a DETR-style detector. The whole batch receives one activity annotation.
+Graph batch representation. Each batch consists of \(N\) consecutive frames. Each frame is action-annotated and a graph is constructed based on that action caption. Objects are grounded using a DETR-style detector. The whole batch receives one activity annotation.
