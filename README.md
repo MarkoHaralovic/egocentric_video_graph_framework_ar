@@ -34,6 +34,7 @@ Left: Full action scene graph constructed from a VLM caption. Right: Gaze-pruned
 ---
 
 ### Figure 2: Workflow overview
+<img src="figures/png/ActivityPrediction.png" width="90%" />
 - [Workflow overview](figures/ActivityPrediction.pdf)
 
 Workflow overview.
@@ -41,6 +42,7 @@ Workflow overview.
 ---
 
 ### Figure 3: Graph Attention Encoder
+<img src="figures/png/GraphAttentionEncoder.png" width="90%" />
 - [Graph Attention Encoder](figures/GraphAttentionEncoder.pdf)
 
 Visualization of our Graph Attention Module, consisting of a graph embedder, linear projection into a lower-dimensional space, and attention pooling over the temporal dimension.
@@ -48,6 +50,7 @@ Visualization of our Graph Attention Module, consisting of a graph embedder, lin
 ---
 
 ### Figure 4: Graph batch representation
+<img src="figures/png/GraphBatch.png" width="90%" />
 - [Graph batch representation](figures/GraphBatch.pdf)
 
 Graph batch representation. Each batch consists of \(N\) consecutive frames. Each frame is action-annotated and a graph is constructed based on that action caption. Objects are grounded using a DETR-style detector. The whole batch receives one activity annotation.
