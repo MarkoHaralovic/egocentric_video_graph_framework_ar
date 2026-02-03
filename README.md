@@ -1,5 +1,8 @@
 # Graph-Based Framework for Activity Recognition in Egocentric Videos
 
+[Article](https://github.com/MarkoHaralovic/egocentric_video_graph_framework_ar/blob/main/article/Graph_Framework_for_Activity_Recognition_in_Egocentric_Videos.pdf)
+
+
 ## Abstract
 We propose a graph-based framework for activity recognition in egocentric videos, representing each frame as an **Action Scene Graph (ASG)** constructed from a VLM caption. We introduce two graph variants:
 
