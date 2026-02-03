@@ -10,7 +10,6 @@ def full_action_graph_to_nx(g, directed=True):
       G.add_node(node_id, node_type=getattr(node, "node_type", None), idx=getattr(node, "idx", None))
       if getattr(node, "node_type", None) == "camera_wearer":
          cw_node_id =node_id
-   # add edges
    for e in g.edges:
       u, v = e.src, e.dst
       G.add_edge(u, v, rel_idx=getattr(e, "rel_idx", None))

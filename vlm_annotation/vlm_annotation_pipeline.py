@@ -175,7 +175,7 @@ def recognize_action_single_frame(
                - Context must be short and descriptive (location or surrounding objects).
                - Optional context can only include relevant objects and their characteristics in the frame scene
                - No adjectives unless needed to identify the object.
-               - Include other people as objects as weel, direct if action done with them, indirect if it can not be concluded.
+               - Include other people as objects as well, direct if action done with them, indirect if it can not be concluded.
                      
 
                Examples you MUST imitate:
